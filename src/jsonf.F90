@@ -86,6 +86,7 @@ module jsonf
 	end type lexer_t
 
 	integer, parameter :: &
+		ARR_TYPE         = 18, &
 		OBJ_TYPE         = 17, &
 		STR_TOKEN        = 16, &
 		STR_TYPE         = 15, &
@@ -481,13 +482,36 @@ function val_to_str(this) result(str_)
 	case (I64_TYPE)
 		call sb%push("i64: "//to_str(this%sca%i64))
 	case (OBJ_TYPE)
-		call sb%push("object: {...}")
-		! TODO: recurse
+		!call sb%push("object: {...}")
+		call sb%push("object: "//obj_to_str(this))
 	case default
-		call sb%push("val_to_str: unknown type "//kind_name(this%type))
+		!call sb%push("val_to_str: unknown type "//kind_name(this%type))
+		call panic("val_to_str: unknown type "//kind_name(this%type))
 	end select
 	str_ = sb%trim()
 end function val_to_str
+
+function obj_to_str(this) result(str_)
+	class(val_t) :: this
+	character(len = :), allocatable :: str_
+	!********
+	type(str_builder_t) :: sb
+	integer(kind=8) :: i
+	logical :: first
+
+	sb = new_str_builder()
+	call sb%push("{")
+	first = .true.
+	do i = 1, size(this%key)
+		if (allocated(this%key(i)%str)) then
+			if (.not. first) call sb%push(", ")
+			first = .false.
+			call sb%push(quote(this%key(i)%str)//": "//this%val(i)%to_str())
+		end if
+	end do
+	call sb%push("}")
+	str_ = sb%trim()
+end function obj_to_str
 
 subroutine parse_val(json, tokens, pos)
 	type(val_t), intent(out) :: json
@@ -506,8 +530,10 @@ subroutine parse_val(json, tokens, pos)
 		json%sca = tokens%vec(pos)%sca
 		pos = pos + 1
 	case (LBRACE_TOKEN)
-		call panic("nested object parsing not implemented yet")  ! TODO
-		!call parse_obj(json, tokens, pos)
+		call parse_obj(json, tokens, pos)
+	case (LBRACKET_TOKEN)
+		call panic("array parsing not implemented yet")  ! TODO
+		!call parse_arr(json, tokens, pos)
 	case default
 		call panic("unexpected value type in object")
 	end select
@@ -591,7 +617,7 @@ end subroutine print_map
 subroutine set_map(json, key, val)
 	type(val_t), intent(inout) :: json
 	character(len=*), intent(in) :: key
-	type(val_t), intent(in) :: val
+	type(val_t), intent(inout) :: val
 	!********
 	integer(kind=8) :: i, n, n0
 	type(str_t), allocatable :: old_keys(:)
@@ -600,6 +626,8 @@ subroutine set_map(json, key, val)
 	n0 = size(json%key)
 	if (json%nkey * 2 >= n0) then
 		! Resize the entries array if load factor exceeds 0.5
+		print *, "********************************"
+		print *, "RESIZING MAP from "//to_str(n0)//" to "//to_str(n0*2)
 		n = n0 * 2
 		call move_alloc(json%key, old_keys)
 		call move_alloc(json%val, old_vals)
@@ -621,7 +649,7 @@ end subroutine set_map
 subroutine set_map_core(json, key, val)
 	type(val_t), intent(inout) :: json
 	character(len=*), intent(in) :: key
-	type(val_t), intent(in) :: val
+	type(val_t), intent(inout) :: val
 	!********
 	integer(8) :: hash, idx, n
 
@@ -633,23 +661,50 @@ subroutine set_map_core(json, key, val)
 	do
 		if (.not. allocated(json%key(idx)%str)) then
 			! Empty slot found, insert new entry
+			print *, "empty slot"
 			json%key(idx)%str = key
-			json%val(idx) = val
+
+			! TODO: this crashes on recursion. I guess I need a deep copy constructor like syntran :(
+			!json%val(idx) = val
+			!call move_val(json%val(idx), val)
+			call move_val(val, json%val(idx))
+
 			json%nkey = json%nkey + 1
 			exit
 		else if (is_str_eq(json%key(idx)%str, key)) then
 			! Key already exists, update value
 			!
 			! TODO: ban duplicate keys by default, option to allow
+			print *, "updating existing key"
 			json%val(idx) = val
 			exit
 		else
 			! Collision, try next index (linear probing)
+			print *, "collision"
 			idx = mod(idx, n) + 1
 		end if
 	end do
 
 end subroutine set_map_core
+
+subroutine move_val(src, dst)
+	! A copy constructor could be added if needed, but it's best to avoid for performance
+	type(val_t), intent(out) :: dst
+	type(val_t), intent(inout) :: src
+	!********
+	dst%type = src%type
+	select case (src%type)
+	case (OBJ_TYPE)
+		dst%nkey = src%nkey
+		call move_alloc(src%key, dst%key)
+		call move_alloc(src%val, dst%val)
+	case (ARR_TYPE)
+		call panic("array move_val not implemented yet")  ! TODO
+	case default
+		dst%sca = src%sca
+	end select
+
+end subroutine move_val
 
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
@@ -722,6 +777,7 @@ function kind_name(kind)
 			"STR_TYPE         ", & ! 15
 			"STR_TOKEN        ", & ! 16
 			"OBJ_TYPE         ", & ! 17
+			"ARR_TYPE         ", & ! 18
 			"unknown          "  & ! inf (trailing comma hack)
 		]
 
