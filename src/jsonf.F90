@@ -6,7 +6,16 @@ module jsonf
 
 	! TODO:
 	! - test object top-level json
+	! - test streaming parsing from file 1-char at a time
+	! - ci/cd
+	!   * docker
+	!   * github actions
+	!   * test on windows, linux (macos?)
+	!   * test with different fortran compilers
+	!   * fpm and cmake
+	!   * release and debug profiles/configurations
 	! - test array top-level json
+	!   * get file/token streaming down before starting array work
 	! - test heterogeneous arrays
 	! - test `null` literal
 	! - test nested objects/arrays
@@ -15,6 +24,7 @@ module jsonf
 	! - test re-entry with re-using one object to load multiple JSON inputs in
 	!   sequence. might find bugs with things that need to be deallocated first
 	! - test error handling: invalid tokens, unterminated strings, invalid numbers
+	! - prune unused code copied from other template projects (blarg etc.)
 	! - test large files
 	! - test unicode in strings
 	!   * note that hex literals can be part of a unicode sequence in JSON, but
@@ -23,7 +33,6 @@ module jsonf
 	! - test comments -- nonstandard but use "#" or another char if requested by some option
 	! - test diagnostics reporting line/column numbers
 	! - test pretty-printing output option
-	! - test streaming parsing from file 1-char at a time
 
 	integer, parameter :: DEBUG = 1
 
@@ -384,6 +393,7 @@ subroutine read_file_json(json, filename)
 
 	! TODO: stream chars one at a time
 	str = read_file(filename)
+	!print *, "str = "//LINE_FEED//str
 	call json%parse(str)
 
 end subroutine read_file_json

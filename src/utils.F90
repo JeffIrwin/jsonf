@@ -255,47 +255,35 @@ end function read_mat_char
 !===============================================================================
 
 function read_file(file, iostat) result(str_)
-
 	! Read all lines of a file into str_
-
 	character(len = *), intent(in) :: file
-
 	integer, optional, intent(out) :: iostat
-
 	character(len = :), allocatable :: str_
-
 	!********
-
 	character :: c
-
 	integer :: io, iu
-
 	type(str_builder_t) :: sb  ! string builder
 
-	open(file = file, newunit = iu, status = 'old', iostat = io)
+	! Open as binary to simplify newline handling
+	open(file = file, newunit = iu, action = "read", access = "stream", iostat = io)
 	if (io /= exit_success) then
 		if (present(iostat)) iostat = io
 		return
 	end if
 
 	! Read 1 character at a time until end
+	io = EXIT_SUCCESS
 	sb = new_str_builder()
 	do
-		read(iu, '(a)', advance = 'no', iostat = io) c
-		if (io == iostat_end) then
-			io = exit_success
-			exit
-		end if
-
-		!if (io == iostat_eor) exit
-		if (io == iostat_eor) c = line_feed
-
+		read(iu, iostat = io) c
+		if (io == IOSTAT_END) exit
 		call sb%push(c)
-
 	end do
+	if (io == IOSTAT_END) io = EXIT_SUCCESS
 	close(iu)
 	str_ = sb%trim()
 
+	!print *, "io = ", io
 	!print *, 'str = '
 	!print *, str
 
