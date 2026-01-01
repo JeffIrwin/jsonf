@@ -38,7 +38,9 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
-		type(str_vec_t) :: key
+		integer(kind=8) :: nkey = 0
+		!type(str_vec_t) :: key
+		type(str_t), allocatable :: key(:)
 		type(val_t), allocatable :: val(:)
 
 		!type(arr_t) :: arr  ! TODO: arrays
@@ -533,6 +535,11 @@ subroutine parse_obj(json, tokens, pos)
 	call match(tokens, pos, LBRACE_TOKEN)
 	json%type = OBJ_TYPE
 
+	! Initialize map storage
+	allocate(json%key(2))
+	allocate(json%val(2))
+	json%nkey = 0
+
 	do
 		if (tokens%vec(pos)%kind == RBRACE_TOKEN) then
 			! End of object
@@ -548,7 +555,9 @@ subroutine parse_obj(json, tokens, pos)
 		call parse_val(val, tokens, pos)
 		print *, "val = ", val%to_str()
 
-		! TODO: store key-value pair in json object
+		! store key-value pair in json object
+		!call set_map(json%key, json%val, key, val)
+		call set_map(json, key, val)
 
 		! Expect comma or end of object
 		select case (tokens%vec(pos)%kind)
@@ -564,7 +573,121 @@ subroutine parse_obj(json, tokens, pos)
 		end select
 	end do
 
+	if (DEBUG > 0) then
+		write(*,*) "Finished parse_obj(), nkey = "//to_str(json%nkey)
+		call print_map("obj =", json)
+	end if
+
 end subroutine parse_obj
+
+subroutine print_map(prefix, json)
+	character(len=*), intent(in) :: prefix
+	type(val_t), intent(in) :: json
+	!********
+	integer(kind=8) :: i
+
+	print *, prefix
+	do i = 1, size(json%key)
+		if (allocated(json%key(i)%str)) then
+			print *, "  key = "//quote(json%key(i)%str)// &
+				", val = "//json%val(i)%to_str()
+		end if
+	end do
+
+end subroutine print_map
+
+!subroutine set_map(keys, vals, key, val)
+subroutine set_map(json, key, val)
+	type(val_t), intent(inout) :: json
+	!type(str_t), allocatable :: keys(:)
+	!type(val_t), allocatable :: vals(:)
+	character(len=*), intent(in) :: key
+	type(val_t), intent(in) :: val
+	!********
+	integer(kind=8) :: i, n, n0
+	!type(map_entry_i64_t), allocatable :: old_entries(:)
+	type(str_t), allocatable :: old_keys(:)
+	type(val_t), allocatable :: old_vals(:)
+
+	!n0 = size(keys)
+	n0 = size(json%key)
+	if (json%nkey * 2 >= n0) then
+		! Resize the entries array if load factor exceeds 0.5
+		n = n0 * 2
+		!call move_alloc(this%entries, old_entries)
+		call move_alloc(json%key, old_keys)
+		call move_alloc(json%val, old_vals)
+		!allocate(this%entries(n))
+		allocate(json%key(n))
+		allocate(json%val(n))
+		json%nkey = 0
+		do i = 1, n0
+			if (allocated(old_keys(i)%str)) then
+				!call json%set_core(old_keys(i), old_vals(i))
+				call set_map_core(json, old_keys(i)%str, old_vals(i))
+			end if
+		end do
+		deallocate(old_keys)
+		deallocate(old_vals)
+	end if
+
+	!call this%set_core(key, val)
+	call set_map_core(json, key, val)
+
+	!integer :: n
+	!n = size(keys)
+	!if (n == 0) then
+	!	allocate(keys(1))
+	!	allocate(vals(1))
+	!	keys(1) = key
+	!	vals(1) = val
+	!else
+	!	! Append to existing arrays
+	!	keys = [keys, key]
+	!	vals = [vals, val]
+	!end if
+
+end subroutine set_map
+
+subroutine set_map_core(json, key, val)
+	type(val_t), intent(inout) :: json
+	character(len=*), intent(in) :: key
+	type(val_t), intent(in) :: val
+	!********
+	integer(8) :: hash, idx, n
+
+	print *, "set_map_core: key = "//quote(key)
+
+	hash = djb2_hash(key)
+	!n = size(this%entries)
+	n = size(json%key)
+	idx = mod(hash, n) + 1
+	do
+		!if (.not. allocated(this%entries(idx)%key)) then
+		if (.not. allocated(json%key(idx)%str)) then
+			! Empty slot found, insert new entry
+			print *, "empty slot"
+			!this%entries(idx)%key = key
+			json%key(idx)%str = key
+			!this%entries(idx)%val = val
+			json%val(idx) = val
+			json%nkey = json%nkey + 1
+			exit
+		else if (is_str_eq(json%key(idx)%str, key)) then
+			! Key already exists, update value
+			!
+			! TODO: ban duplicate keys by default, option to allow
+			print *, "update existing"
+			json%val(idx) = val
+			exit
+		else
+			! Collision, try next index (linear probing)
+			print *, "collision"
+			idx = mod(idx, n) + 1
+		end if
+	end do
+
+end subroutine set_map_core
 
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
@@ -647,6 +770,18 @@ function kind_name(kind)
 	kind_name = trim(names(kind))
 
 end function kind_name
+
+function djb2_hash(str) result(hash)
+	! DJB2 hash function implementation
+	character(len=*), intent(in) :: str
+	integer(8) :: hash
+	integer :: i
+
+	hash = 5381
+	do i = 1, len(str)
+		hash = ((hash * 33) + iachar(str(i:i)))  ! hash * 33 + c
+	end do
+end function djb2_hash
 
 end module jsonf
 
