@@ -30,28 +30,14 @@ module jsonf
 		logical :: bool
 		integer(kind=8) :: i64
 		real(kind=8) :: f64
-		!type(str_t) :: str
 		character(len=:), allocatable :: str
 	end type sca_t
-
-	!type obj_t
-	!	! JSON object type
-	!	type(str_vec_t) :: keys
-	!	!type(val_vec_t) :: values
-	!	type(val_t), allocatable :: values(:)
-
-	!	!contains
-	!	!	procedure :: get_value_by_key => obj_get_value_by_key
-	!	!	procedure :: has_key          => obj_has_key
-	!	!	procedure :: to_str           => obj_to_str
-	!end type obj_t
 
 	type val_t
 		! JSON value type -- scalar, array, or object
 		integer :: type
 		type(sca_t) :: sca
 
-		!type(obj_t), allocatable :: obj  ! TODO: probably needs to be allocatable
 		type(str_vec_t) :: key
 		type(val_t), allocatable :: val(:)
 
@@ -70,13 +56,11 @@ module jsonf
 		type(val_t) :: root
 
 		contains
-			!procedure :: to_str => json_to_str
 			procedure :: &
 				!to_str    => to_str_json, &
 				read_file => read_file_json, &
 				read_str  => read_str_json, &
 				parse     => parse_json
-
 	end type json_t
 
 	type token_t
@@ -94,11 +78,6 @@ module jsonf
 				push => push_token, &
 				trim => trim_token_vec
 	end type token_vec_t
-
-	type parser_t
-		integer(kind=8) :: pos
-		type(token_t), allocatable :: tokens(:)
-	end type parser_t
 
 	type lexer_t
 		character(len=:), allocatable :: text
@@ -143,7 +122,6 @@ character function lexer_peek(lexer, offset)
 	integer, intent(in) :: offset
 	!********
 	integer(kind=8) :: pos
-
 	pos = lexer%pos + offset
 	if (pos < 1 .or. pos > len(lexer%text)) then
 		lexer_peek = null_char
@@ -269,56 +247,39 @@ function lex(lexer) result(token)
 		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(sca%str)
 		token = new_token(STR_TOKEN, start, text, sca)
 
-		!do while (lexer%current() /= '"' .and. &
-		!          lexer%current() /= null_char)
-		!	lexer%pos = lexer%pos + 1
-		!end do
-		!end_ = lexer%pos
-		!text = lexer%text(start: end_ - 1)
-		!token = new_token(STRING_TOKEN, start, text)
-
 		return
 	end if
 
 	select case (lexer%current())
-		case ("+")
-			token = new_token(PLUS_TOKEN, lexer%pos, lexer%current())
+	case ("+")
+		token = new_token(PLUS_TOKEN, lexer%pos, lexer%current())
+	case ("-")
+		token = new_token(MINUS_TOKEN, lexer%pos, lexer%current())
+	case ("{")
+		token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current())
+	case ("}")
+		token = new_token(RBRACE_TOKEN, lexer%pos, lexer%current())
+	case ("[")
+		token = new_token(LBRACKET_TOKEN, lexer%pos, lexer%current())
+	case ("]")
+		token = new_token(RBRACKET_TOKEN, lexer%pos, lexer%current())
+	case (":")
+		token = new_token(COLON_TOKEN, lexer%pos, lexer%current())
+	case (",")
+		token = new_token(COMMA_TOKEN, lexer%pos, lexer%current())
+	case ("#")
+		token = new_token(HASH_TOKEN, lexer%pos, lexer%current())
 
-		case ("-")
-			token = new_token(MINUS_TOKEN, lexer%pos, lexer%current())
+	case default
+		!print *, 'bad token text = ', quote(lexer%current())
 
-		case ("{")
-			token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current())
-
-		case ("}")
-			token = new_token(RBRACE_TOKEN, lexer%pos, lexer%current())
-
-		case ("[")
-			token = new_token(LBRACKET_TOKEN, lexer%pos, lexer%current())
-
-		case ("]")
-			token = new_token(RBRACKET_TOKEN, lexer%pos, lexer%current())
-
-		case (":")
-			token = new_token(COLON_TOKEN, lexer%pos, lexer%current())
-
-		case (",")
-			token = new_token(COMMA_TOKEN, lexer%pos, lexer%current())
-
-		case ("#")
-			token = new_token(HASH_TOKEN, lexer%pos, lexer%current())
-
-		case default
-
-			!print *, 'bad token text = ', quote(lexer%current())
-
-			token = new_token(BAD_TOKEN, lexer%pos, lexer%current())
-			!! TODO: implement span_t and diagnostics
-			!span = new_span(lexer%pos, len(lexer%current()))
-			!call lexer%diagnostics%push( &
-			!	err_unexpected_char(lexer%context, &
-			!	span, lexer%current()))
-			call panic("unexpected character: "//quote(lexer%current()))
+		token = new_token(BAD_TOKEN, lexer%pos, lexer%current())
+		!! TODO: implement span_t and diagnostics
+		!span = new_span(lexer%pos, len(lexer%current()))
+		!call lexer%diagnostics%push( &
+		!	err_unexpected_char(lexer%context, &
+		!	span, lexer%current()))
+		call panic("unexpected character: "//quote(lexer%current()))
 
 	end select
 
@@ -342,7 +303,6 @@ end function new_token
 
 function new_token_vec() result(vec)
 	type(token_vec_t) :: vec
-
 	vec%len_ = 0
 	vec%cap = 2  ! I think a small default makes sense here
 	allocate(vec%vec( vec%cap ))
@@ -418,8 +378,6 @@ subroutine read_file_json(json, filename)
 
 	! TODO: stream chars one at a time
 	str = read_file(filename)
-	!json = read_json(str)
-	!call parse_json()
 	call json%parse(str)
 
 end subroutine read_file_json
@@ -428,7 +386,6 @@ subroutine read_str_json(json, str)
 	class(json_t) :: json
 	character(len=*), intent(in) :: str
 	!********
-	!json = read_json(str)
 	call json%parse(str)
 end subroutine read_str_json
 
@@ -471,99 +428,12 @@ subroutine parse_json(json, str)
 
 end subroutine parse_json
 
-function read_json(str) result(json)
-	! TODO: delete
-	!
-	! TODO: take an abstract `input` obj instead of str, in case of streaming from file vs whole string
-	character(len=*), intent(in) :: str
-	type(json_t) :: json
-	!********
-	integer(kind=8) :: pos
-	type(lexer_t) :: lexer
-	type(token_t) :: token
-	type(token_vec_t) :: tokens
-
-	! Lex and get an array of tokens
-	!
-	! TODO: can we make a streaming tokenizer to get one (or a few lookahead)
-	! tokens at a time instead of making an array of all tokens up front?
-	tokens = new_token_vec()
-	lexer = new_lexer(str, "<dummy-filename>")
-	do
-		token = lexer%lex()
-
-		if (token%kind /= WHITESPACE_TOKEN .and. &
-		    token%kind /= BAD_TOKEN) then
-			call tokens%push(token)
-		end if
-
-		if (token%kind == EOF_TOKEN) exit
-	end do
-	!tokens = tokens%vec(1: tokens%len_)  ! trim
-	call tokens%trim()
-
-	pos = 1
-	!print *, 'tokens%len_ = ', tokens%len_
-
-	if (DEBUG > 0) then
-		write(*,*) tokens_to_str(tokens)
-	end if
-
-	write(*,*) "Parsing JSON tokens ..."
-
-end function read_json
-
-function new_parser(str_, src_file) result(parser)
-	! TODO: delete
-	character(len = *), intent(in) :: str_, src_file
-	type(parser_t) :: parser
-	!********
-	type(lexer_t) :: lexer
-	type(token_t) :: token
-	type(token_vec_t) :: tokens
-
-	! Lex and get an array of tokens
-	!
-	! TODO: can we make a streaming tokenizer to get one (or a few lookahead)
-	! tokens at a time instead of making an array of all tokens up front?
-	tokens = new_token_vec()
-	lexer = new_lexer(str_, src_file)
-	do
-		token = lexer%lex()
-
-		if (token%kind /= WHITESPACE_TOKEN .and. &
-		    token%kind /= BAD_TOKEN) then
-			call tokens%push(token)
-		end if
-
-		if (token%kind == EOF_TOKEN) exit
-	end do
-	!parser%tokens = tokens%vec(1: tokens%len_)
-
-	!! Set other parser members
-	!parser%pos = 1
-	!!print *, 'tokens%len_ = ', tokens%len_
-
-	if (DEBUG > 0) then
-		write(*,*) tokens_to_str(tokens)
-	end if
-
-end function new_parser
-
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
 	!********
 	type(token_t), allocatable :: tmp(:)
-
 	this%vec = this%vec(1: this%len_)
 	this%cap = this%len_
-
-	!allocate(tmp( this%len_ ))
-	!tmp = this%vec(1: this%len_)
-
-	!call move_alloc(tmp, this%vec)
-	!this%cap = this%len_
-
 end subroutine trim_token_vec
 
 subroutine push_token(vec, val)
@@ -608,6 +478,7 @@ module function tokens_to_str(tokens) result(str_)
 end function tokens_to_str
 
 function kind_name(kind)
+	! TODO: consider auto-generating
 	integer, intent(in) :: kind
 	character(len = :), allocatable :: kind_name
 	character(len = *), parameter :: names(*) = [ &
