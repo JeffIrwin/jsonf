@@ -5,6 +5,7 @@ module args_m
 
 	type args_t
 
+		! TODO: stdin option with `-` arg
 		logical :: &
 			assert       = .false., &  ! assert stop on error?
 			help         = .false., &

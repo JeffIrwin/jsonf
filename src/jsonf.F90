@@ -4,22 +4,41 @@ module jsonf
 	use utils_m
 	implicit none
 
+	! TODO:
+	! - test object top-level json
+	! - test array top-level json
+	! - test heterogeneous arrays
+	! - test `null` literal
+	! - test nested objects/arrays
+	! - test error handling: invalid tokens, unterminated strings, invalid numbers
+	! - test large files
+	! - test unicode in strings
+	!   * note that hex literals can be part of a unicode sequence in JSON, but
+	!     numeric literals are never hex, octal, or binary
+	! - test escape sequences in strings
+	! - test comments -- nonstandard but use "#" or another char if requested by some option
+	! - test diagnostics reporting line/column numbers
+	! - test pretty-printing output option
+	! - test streaming parsing from file 1-char at a time
+
 	integer, parameter :: DEBUG = 1
 
-	type val_t
+	type sca_t
+		! Scalar value type -- primitive bool, int, float, str, or null, but
+		! *not* arrays or objects
 		integer :: type
 		logical :: bool
 		integer(kind=8) :: i64
 		real(kind=8) :: f64
 		!type(str_t) :: str
 		character(len=:), allocatable :: str
-	end type val_t
+	end type sca_t
 
 	type token_t
 		integer :: kind
 		integer(kind=8) :: pos
 		character(len=:), allocatable :: text
-		type(val_t) :: val
+		type(sca_t) :: sca
 	end type token_t
 
 	type token_vec_t
@@ -86,23 +105,22 @@ character function lexer_peek(lexer, offset)
 	lexer_peek = lexer%text(pos: pos)
 end function lexer_peek
 
-function new_literal_value(type, bool, i64, f64, str_) result(val)
+function new_literal(type, bool, i64, f64, str_) result(lit)
 	integer, intent(in) :: type
 	!********
 	integer(kind=8) , intent(in), optional :: i64
 	real   (kind=8) , intent(in), optional :: f64
 	logical         , intent(in), optional :: bool
 	character(len=*), intent(in), optional :: str_
-	type(val_t) :: val
+	type(sca_t) :: lit
 
-	val%type = type
-	if (present(bool)) val%bool    = bool
-	if (present(f64 )) val%f64     = f64
-	if (present(i64 )) val%i64     = i64
-	!if (present(str_)) val%str%str = str_
-	if (present(str_)) val%str = str_
+	lit%type = type
+	if (present(bool)) lit%bool    = bool
+	if (present(f64 )) lit%f64     = f64
+	if (present(i64 )) lit%i64     = i64
+	if (present(str_)) lit%str = str_
 
-end function new_literal_value
+end function new_literal
 
 function lex(lexer) result(token)
 	use utils_m
@@ -114,7 +132,7 @@ function lex(lexer) result(token)
 	integer(kind=8) :: start, end_, i64
 	logical :: float_
 	type(str_builder_t) :: sb
-	type(val_t) :: val
+	type(sca_t) :: sca
 
 	if (DEBUG > 2) then
 		write(*,*) "lex: pos = "//to_str(lexer%pos)
@@ -162,8 +180,8 @@ function lex(lexer) result(token)
 			read(text_strip, *, iostat = io) i64
 			if (DEBUG > 0) write(*,*) "lex: parsed i64 = "//to_str(i64)
 			if (io == exit_success) then
-				val   = new_literal_value(I64_TYPE, i64 = i64)
-				token = new_token(I64_TOKEN, start, text, val)
+				sca   = new_literal(I64_TYPE, i64 = i64)
+				token = new_token(I64_TOKEN, start, text, sca)
 			end if
 		end if
 
@@ -178,6 +196,7 @@ function lex(lexer) result(token)
 
 		sb = new_str_builder()
 		do
+			! TODO: test str escape rules. Only 8 characters or a unicode sequence are allowed to follow a backslash
 			if (lexer%current() == "\") then
 				lexer%pos = lexer%pos + 1
 			end if
@@ -199,9 +218,9 @@ function lex(lexer) result(token)
 			return
 		end if
 
-		val   = new_literal_value(STR_TYPE, str_ = sb%trim())
-		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(val%str)
-		token = new_token(STR_TOKEN, start, text, val)
+		sca = new_literal(STR_TYPE, str_ = sb%trim())
+		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(sca%str)
+		token = new_token(STR_TOKEN, start, text, sca)
 
 		!do while (lexer%current() /= '"' .and. &
 		!          lexer%current() /= null_char)
@@ -260,17 +279,17 @@ function lex(lexer) result(token)
 
 end function lex
 
-function new_token(kind, pos, text, val) result(token)
+function new_token(kind, pos, text, sca) result(token)
 	integer :: kind
 	integer(kind=8) :: pos
 	character(len=*) :: text
-	type(val_t), optional :: val
+	type(sca_t), optional :: sca
 	type(token_t) :: token
 
 	token%kind = kind
 	token%pos  = pos
 	token%text = text
-	if (present(val)) token%val  = val
+	if (present(sca)) token%sca = sca
 
 end function new_token
 
