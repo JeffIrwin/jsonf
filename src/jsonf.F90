@@ -1,0 +1,405 @@
+
+module jsonf
+
+	use utils_m
+	implicit none
+
+	integer, parameter :: DEBUG = 1
+
+	type val_t
+		integer :: type
+		logical :: bool
+		integer(kind=8) :: i64
+		real(kind=8) :: f64
+		!type(str_t) :: str
+		character(len=:), allocatable :: str
+	end type val_t
+
+	type token_t
+		integer :: kind, pos
+		character(len=:), allocatable :: text
+		type(val_t) :: val
+	end type token_t
+
+	type token_vec_t
+		type(token_t), allocatable :: v(:)
+		integer(kind=8) :: len_, cap
+		contains
+			procedure :: push => push_token
+	end type token_vec_t
+
+	type parser_t
+		integer(kind=8) :: pos
+		!********
+	end type parser_t
+
+	type lexer_t
+		character(len=:), allocatable :: text
+		integer(kind=8) :: pos
+		type(str_vec_t) :: diagnostics
+		contains
+			procedure :: lex, current => lexer_current, peek => lexer_peek
+	end type lexer_t
+
+	integer, parameter :: &
+		STR_TOKEN        = 16, &
+		STR_TYPE         = 15, &
+		LBRACE_TOKEN     = 14, &
+		RBRACE_TOKEN     = 13, &
+		LBRACKET_TOKEN   = 12, &
+		RBRACKET_TOKEN   = 11, &
+		COLON_TOKEN      = 10, &
+		COMMA_TOKEN      = 9, &
+		HASH_TOKEN       = 8, &
+		MINUS_TOKEN      = 7, &
+		PLUS_TOKEN       = 6, &
+		I64_TYPE         = 5, &
+		I64_TOKEN        = 4, &
+		WHITESPACE_TOKEN = 3, &
+		BAD_TOKEN        = 2, &
+		EOF_TOKEN        = 1
+
+contains
+
+character function lexer_current(lexer)
+	class(lexer_t) :: lexer
+	lexer_current = lexer%peek(0)
+end function lexer_current
+
+character function lexer_lookahead(lexer)
+	class(lexer_t) :: lexer
+	lexer_lookahead = lexer%peek(1)
+end function lexer_lookahead
+
+character function lexer_peek(lexer, offset)
+	class(lexer_t) :: lexer
+	integer, intent(in) :: offset
+	!********
+	integer :: pos
+
+	pos = lexer%pos + offset
+	if (pos < 1 .or. pos > len(lexer%text)) then
+		lexer_peek = null_char
+		return
+	end if
+	lexer_peek = lexer%text(pos: pos)
+end function lexer_peek
+
+function new_literal_value(type, bool, i64, f64, str_) result(val)
+	integer, intent(in) :: type
+	!********
+	integer(kind=8), intent(in), optional :: i64
+	real   (kind=8), intent(in), optional :: f64
+	logical          , intent(in), optional :: bool
+	character(len=*) , intent(in), optional :: str_
+	type(val_t) :: val
+
+	val%type = type
+	if (present(bool)) val%bool    = bool
+	if (present(f64 )) val%f64     = f64
+	if (present(i64 )) val%i64     = i64
+	!if (present(str_)) val%str%str = str_
+	if (present(str_)) val%str = str_
+
+end function new_literal_value
+
+function quote(str) result(quoted)
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: quoted
+	quoted = '"'//str//'"'
+end function quote
+
+function lex(lexer) result(token)
+	use utils_m
+	class(lexer_t) :: lexer
+	type(token_t) :: token
+	!********
+	character(len=:), allocatable :: text, text_strip
+	integer :: io
+	integer(kind=8) :: start, end_, suffix_start, suffix_end, i64
+	logical :: float
+	type(str_builder_t) :: sb
+	type(val_t) :: val
+
+	if (DEBUG > 2) then
+		write(*,*) "lex: pos = "//to_str(lexer%pos)
+	end if
+
+	if (lexer%pos > len(lexer%text)) then
+		token = new_token(EOF_TOKEN, lexer%pos, null_char)
+		return
+	end if
+
+	start = lexer%pos
+	if (DEBUG > 2) write(*,*) "lex: current char = "//quote(lexer%current())
+
+	if (is_whitespace(lexer%current())) then
+		do while (is_whitespace(lexer%current()))
+			lexer%pos = lexer%pos + 1
+		end do
+		text = lexer%text(start: lexer%pos-1)
+		token = new_token(whitespace_token, start, text)
+		return
+	end if
+
+	if (is_digit_under(lexer%current())) then
+		! Numeric decimal integer or float
+
+		float = .false.
+
+		do while (is_float_under(lexer%current()))
+
+			if (is_sign(lexer%current()) .and. .not. &
+				is_expo(lexer%peek(-1))) exit
+
+			float = float .or. .not. is_digit_under(lexer%current())
+
+			lexer%pos = lexer%pos + 1
+		end do
+		end_ = lexer%pos
+
+		text = lexer%text(start: end_ - 1)
+		text_strip = rm_char(text, "_")
+
+		if (float) then
+			call panic("float parsing not implemented yet")  ! TODO
+		else  ! i64
+			read(text_strip, *, iostat = io) i64
+			if (DEBUG > 0) write(*,*) "lex: parsed i64 = "//to_str(i64)
+			if (io == exit_success) then
+				val   = new_literal_value(I64_TYPE, i64 = i64)
+				token = new_token(I64_TOKEN, start, text, val)
+			end if
+		end if
+
+		!print *, 'float text = ', quote(text)
+		return
+	end if
+
+	if (lexer%current() == '"') then
+		! String literal
+		lexer%pos = lexer%pos + 1  ! Skip opening quote
+		start = lexer%pos
+
+		sb = new_str_builder()
+		do
+			if (lexer%current() == "\") then
+				lexer%pos = lexer%pos + 1
+			end if
+
+			if (lexer%current() == '"') then
+				lexer%pos = lexer%pos + 1
+				exit
+			end if
+
+			call sb%push(lexer%current())
+			lexer%pos = lexer%pos + 1
+		end do
+		text = lexer%text(start: lexer%pos - 1)
+
+		if (lexer%pos > len(lexer%text)) then
+			! Unterminated string
+			token = new_token(BAD_TOKEN, start, text)
+			call panic("unterminated string literal")  ! TODO: diagnostics
+			return
+		end if
+
+		val   = new_literal_value(STR_TYPE, str_ = sb%trim())
+		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(val%str)
+		token = new_token(STR_TOKEN, start, text, val)
+
+		!do while (lexer%current() /= '"' .and. &
+		!          lexer%current() /= null_char)
+		!	lexer%pos = lexer%pos + 1
+		!end do
+		!end_ = lexer%pos
+		!text = lexer%text(start: end_ - 1)
+		!token = new_token(STRING_TOKEN, start, text)
+
+		return
+	end if
+
+	select case (lexer%current())
+		case ("+")
+			token = new_token(PLUS_TOKEN, lexer%pos, lexer%current())
+
+		case ("-")
+			token = new_token(MINUS_TOKEN, lexer%pos, lexer%current())
+
+		case ("{")
+			token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current())
+
+		case ("}")
+			token = new_token(RBRACE_TOKEN, lexer%pos, lexer%current())
+
+		case ("[")
+			token = new_token(LBRACKET_TOKEN, lexer%pos, lexer%current())
+
+		case ("]")
+			token = new_token(RBRACKET_TOKEN, lexer%pos, lexer%current())
+
+		case (":")
+			token = new_token(COLON_TOKEN, lexer%pos, lexer%current())
+
+		case (",")
+			token = new_token(COMMA_TOKEN, lexer%pos, lexer%current())
+
+		case ("#")
+			token = new_token(HASH_TOKEN, lexer%pos, lexer%current())
+
+		case default
+
+			!print *, 'bad token text = ', quote(lexer%current())
+
+			token = new_token(BAD_TOKEN, lexer%pos, lexer%current())
+			!! TODO: implement span_t and diagnostics
+			!span = new_span(lexer%pos, len(lexer%current()))
+			!call lexer%diagnostics%push( &
+			!	err_unexpected_char(lexer%context, &
+			!	span, lexer%current()))
+
+	end select
+
+	lexer%pos = lexer%pos + 1
+
+end function lex
+
+function new_token(kind, pos, text, val) result(token)
+	integer :: kind
+	integer(kind=8) :: pos
+	character(len=*) :: text
+	type(val_t), optional :: val
+	type(token_t) :: token
+
+	token%kind = kind
+	token%pos  = pos
+	token%text = text
+	if (present(val)) token%val  = val
+
+end function new_token
+
+function new_token_vec() result(vec)
+	type(token_vec_t) :: vec
+
+	vec%len_ = 0
+	vec%cap = 2  ! I think a small default makes sense here
+	allocate(vec%v( vec%cap ))
+end function new_token_vec
+
+function new_lexer(text, src_file) result(lexer)
+	character(len=*) :: text, src_file
+	type(lexer_t) :: lexer
+	!********
+	integer :: i, i0, nlines
+
+	integer, allocatable :: lines(:)
+
+	lexer%text = text
+	lexer%pos  = 1
+	lexer%diagnostics = new_str_vec()
+
+	! Count lines
+	nlines = 0
+	i = 0
+	do
+		i = i + 1
+		if (i > len(text)) exit
+
+		if (i == len(text) .or. &
+			text(i:i) == line_feed .or. &
+			text(i:i) == carriage_return) then
+
+			nlines = nlines + 1
+		end if
+
+	end do
+	!print *, 'nlines = ', nlines
+
+	allocate(lines(nlines + 1))
+
+	! Get character indices for the start of each line and save them in lines(:)
+	nlines = 0
+	i = 0
+	i0 = 0
+	do
+		i = i + 1
+		if (i > len(text)) exit
+
+		if (i == len(text) .or. &
+			text(i:i) == line_feed .or. &
+			text(i:i) == carriage_return) then
+
+			nlines = nlines + 1
+			lines(nlines) = i0 + 1
+			i0 = i
+		end if
+
+	end do
+	lines(nlines + 1) = len(text) + 1
+
+	!print *, 'lines = ', lines
+
+	if (DEBUG > 1) then
+		write(*,*) 'lines = '
+		do i = 1, nlines
+			write(*, '(i5,a)') i, ' | '//text(lines(i): lines(i+1) - 2)
+		end do
+	end if
+
+end function new_lexer
+
+function new_parser(str_, src_file) result(parser)
+	character(len = *), intent(in) :: str_, src_file
+	type(parser_t) :: parser
+	!********
+	type(lexer_t) :: lexer
+	type(token_t) :: token
+	type(token_vec_t) :: tokens
+
+	! Lex and get an array of tokens
+	tokens = new_token_vec()
+	lexer = new_lexer(str_, src_file)
+	do
+		token = lexer%lex()
+
+		if (token%kind /= WHITESPACE_TOKEN .and. &
+		    token%kind /= BAD_TOKEN) then
+			call tokens%push(token)
+		end if
+
+		if (token%kind == EOF_TOKEN) exit
+	end do
+
+	! Set other parser members
+	parser%pos = 1
+	!print *, 'tokens%len_ = ', tokens%len_
+
+end function new_parser
+
+subroutine push_token(vector, val)
+	class(token_vec_t) :: vector
+	type(token_t) :: val
+	!********
+	integer(kind=8) :: tmp_cap
+	type(token_t), allocatable :: tmp(:)
+
+	vector%len_ = vector%len_ + 1
+
+	if (vector%len_ > vector%cap) then
+		!print *, 'growing vector'
+
+		tmp_cap = 2 * vector%len_
+		allocate(tmp( tmp_cap ))
+		tmp(1: vector%cap) = vector%v
+
+		call move_alloc(tmp, vector%v)
+		vector%cap = tmp_cap
+
+	end if
+
+	vector%v( vector%len_ ) = val
+
+end subroutine push_token
+
+end module jsonf
+
