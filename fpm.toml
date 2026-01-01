@@ -6,6 +6,9 @@ author = "Jeff Irwin"
 maintainer = "jirwin505@gmail.com"
 copyright = "Copyright 2025, Jeff Irwin"
 
+#[executable]
+#name = "jsonf"
+
 [build]
 auto-executables = true
 auto-tests = true

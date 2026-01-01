@@ -27,6 +27,7 @@ module utils_m
 			fg_bright_red         = ESC//"[91m", &
 			fg_bold_bright_red    = ESC//"[91;1m", &
 			fg_bold_bright_yellow = ESC//"[93;1m", &
+			fg_green              = ESC//"[32m", &
 			fg_bright_green       = ESC//"[92m", &
 			fg_bright_yellow      = ESC//"[93m", &
 			fg_bright_blue        = ESC//"[94m", &
@@ -611,16 +612,16 @@ end function mat_char_to_str
 subroutine panic(msg)
 	character(len = *), intent(in) :: msg
 	if (msg /= "") write(*,*) ERROR_STR//msg
-	call aoc_exit(EXIT_FAILURE)
+	call jsonf_exit(EXIT_FAILURE)
 end subroutine panic
 
 !===============================================================================
 
-subroutine aoc_exit(exit_code)
+subroutine jsonf_exit(exit_code)
 	integer, intent(in) :: exit_code
-	if (exit_code == EXIT_SUCCESS) write(*,*) fg_bright_green//"Finished Fortran AOC"//color_reset
+	if (exit_code == EXIT_SUCCESS) write(*,*) fg_green//"Finished jsonf"//color_reset
 	call exit(exit_code)
-end subroutine aoc_exit
+end subroutine jsonf_exit
 
 !===============================================================================
 
@@ -860,6 +861,14 @@ logical function is_whitespace(c)
 	is_whitespace = any(c == [tab, line_feed, vert_tab, carriage_return, ' '])
 
 end function is_whitespace
+
+!===============================================================================
+
+function quote(str)
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: quote
+	quote = '"'//str//'"'
+end function quote
 
 !===============================================================================
 

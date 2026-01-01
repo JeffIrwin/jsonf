@@ -6,14 +6,14 @@ module args_m
 	type args_t
 
 		logical :: &
-			test               = .false., &  ! use test input file? otherwise full input
-			assert             = .false., &  ! assert correctness of results?
-			part1              = .false., &  ! run part 1 only? default both parts
-			part2              = .false., &
-			help               = .false., &
-			has_input_filename = .false.
+			assert       = .false., &  ! assert stop on error?
+			help         = .false., &
+			has_str      = .false., &
+			has_filename = .false.
 
-		character(len=:), allocatable :: input_filename
+		character(len=:), allocatable :: &
+			filename, &
+			str
 
 	end type args_t
 
@@ -39,7 +39,7 @@ function get_arg(i)
 	if (io /= 0) then
 		call panic("can't get value of command argument index "//to_str(i))
 	end if
-	!print *, "arg "//to_str(i)//" = ", get_arg
+	print *, "arg "//to_str(i)//" = <", get_arg, ">"
 
 end function get_arg
 
@@ -53,8 +53,8 @@ function parse_args() result(args)
 	logical :: error = .false.
 	type(str_vec_t) :: argv
 
-	! Set defaults
-	args%input_filename = "input.txt"
+	! Set defaults, if any
+	! [none]
 
 	! Get the cmd args as a vector of strings
 	nargs = command_argument_count()
@@ -76,57 +76,68 @@ function parse_args() result(args)
 		case ("-h", "-help", "--help")
 			args%help = .true.
 
-		case ("-t", "--test")
-			args%test = .true.
-			if (.not. args%has_input_filename) then
-				args%input_filename = "test-input.txt"
-			end if
-
 		case ("-a", "--assert")
+			! TODO: do something with this. json-fortran has a "stop-on-error"
+			! option which I would like to implement, default false and return
+			! error codes but continue
 			args%assert = .true.
 
-		case ("-1", "--part1")
-			args%part1 = .true.
-
-		case ("-2", "--part2")
-			args%part2 = .true.
-
-		case ("-i", "--input")
+		case ("-s", "--str", "--string")
+			! TODO: fpm removes quotes from *inside* of cmd args, e.g.
+			!
+			!     '{"a": 69, "x": 420}'  ->  {a: 69, x: 420}
+			!
+			! Not sure if there's a good reason for it or if it's actually a
+			! bug.  Of course you can install the exe directly and run it
+			! outside of fpm and then there's no problem:
+			!
+			!     fpm install --prefix . && ./bin/jsonf -s '{"a123": 69, "x456": 420}'
+			!
 			i = i + 1
-			args%has_input_filename = .true.
-			args%input_filename = argv%vec(i)%str
-			!print *, "input filename = ", args%input_filename
+			args%has_str = .true.
+			args%str = argv%vec(i)%str
+			print *, "input string = ", args%str
 
 		case default
-			! run.sh passes args to make as well as this program. don't
-			! error-out because we can't understand make's args
-			write(*,*) WARN_STR//'bad command argument "'//arg//'"'
+
+			ipos = ipos + 1
+			select case (ipos)
+			case (1)
+				args%has_filename = .true.
+				args%filename = arg
+			case default
+				error = .true.
+				write(*,*) ERROR_STR//'bad command argument "'//arg//'"'
+			end select
+
+			!! run.sh passes args to make as well as this program. don't
+			!! error-out because we can't understand make's args
+			!write(*,*) WARN_STR//'bad command argument "'//arg//'"'
 
 		end select
 
 	end do
+	! TODO: error if filename *and* string are both given
 
 	!********
 
 	if (error .or. args%help) then
 
 		write(*,*) fg_bold//"Usage:"//color_reset
-		write(*,*) "    main -h | --help"
-		write(*,*) "    main [-1 | --part1] [-2 | --part2]"
-		write(*,*) "    main [-t | --test] [(-i|--input) file.txt]"
-		write(*,*) "    main -a | --assert"
+		write(*,*) "    jsonf -h | --help"
+		write(*,*) "    jsonf FILE.json"
+		write(*,*) "    jsonf (-s | --string) STRING"
+		write(*,*) "    jsonf -a | --assert"
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
 		write(*,*) "    --help        Show this help"
-		write(*,*) "    --part1       Run part 1 only. Default both parts"
-		write(*,*) "    --part2       Run part 2 only"
-		write(*,*) "    --test        Use test-input.txt instead of input.txt"
-		write(*,*) "    --input       Input data filename"
+		write(*,*) "    FILE.json     Input JSON filename"
+		write(*,*) "    --string      Input JSON string"
 		write(*,*) "    --assert      Abort if results do not match expected answers"
 		write(*,*)
 
 		if (error) call panic("")
-		call aoc_exit(EXIT_SUCCESS)
+		call jsonf_exit(EXIT_SUCCESS)
 	end if
 
 end function parse_args

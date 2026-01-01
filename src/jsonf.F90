@@ -104,12 +104,6 @@ function new_literal_value(type, bool, i64, f64, str_) result(val)
 
 end function new_literal_value
 
-function quote(str)
-	character(len=*), intent(in) :: str
-	character(len=:), allocatable :: quote
-	quote = '"'//str//'"'
-end function quote
-
 function lex(lexer) result(token)
 	use utils_m
 	class(lexer_t) :: lexer
