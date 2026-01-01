@@ -34,6 +34,32 @@ module jsonf
 		character(len=:), allocatable :: str
 	end type sca_t
 
+	type obj_t
+		! JSON object type
+		type(str_vec_t) :: keys
+		!type(val_vec_t) :: values
+		type(val_t), allocatable :: values(:)
+
+		!contains
+		!	procedure :: get_value_by_key => obj_get_value_by_key
+		!	procedure :: has_key          => obj_has_key
+		!	procedure :: to_str           => obj_to_str
+	end type obj_t
+
+	type val_t
+		! JSON value type -- scalar, array, or object
+		integer :: type
+		type(sca_t) :: sca
+		type(obj_t), allocatable :: obj  ! TODO: probably needs to be allocatable
+		!type(arr_t) :: arr  ! TODO: arrays
+
+		!contains
+		!	procedure :: is_scalar => val_is_scalar
+		!	procedure :: is_object => val_is_object
+		!	procedure :: is_array  => val_is_array
+		!	procedure :: to_str    => val_to_str
+	end type val_t
+
 	type token_t
 		integer :: kind
 		integer(kind=8) :: pos
