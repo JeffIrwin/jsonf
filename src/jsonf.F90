@@ -30,7 +30,7 @@ module jsonf
 
 	type parser_t
 		integer(kind=8) :: pos
-		!********
+		type(token_t), allocatable :: tokens(:)
 	end type parser_t
 
 	type lexer_t
@@ -195,7 +195,7 @@ function lex(lexer) result(token)
 			call sb%push(lexer%current())
 			lexer%pos = lexer%pos + 1
 		end do
-		text = lexer%text(start: lexer%pos - 1)
+		text = lexer%text(start: lexer%pos - 2)
 
 		if (lexer%pos > len(lexer%text)) then
 			! Unterminated string
@@ -369,10 +369,15 @@ function new_parser(str_, src_file) result(parser)
 
 		if (token%kind == EOF_TOKEN) exit
 	end do
+	parser%tokens = tokens%v(1: tokens%len_)
 
 	! Set other parser members
 	parser%pos = 1
 	!print *, 'tokens%len_ = ', tokens%len_
+
+	if (DEBUG > 0) then
+		write(*,*) tokens_to_str(parser)
+	end if
 
 end function new_parser
 
@@ -400,6 +405,55 @@ subroutine push_token(vector, val)
 	vector%v( vector%len_ ) = val
 
 end subroutine push_token
+
+module function tokens_to_str(parser) result(str_)
+	class(parser_t) :: parser
+	character(len = :), allocatable :: str_
+	!********
+	integer :: i
+
+	! TODO: str_builder_t
+	str_ = 'tokens = '//line_feed//'<<<'//line_feed
+	do i = 1, size(parser%tokens)
+		str_ = str_//tab &
+				//'<'//           parser%tokens(i)%text  //'> ' &
+				//'<'//kind_name( parser%tokens(i)%kind )//'>'  &
+				//line_feed
+	end do
+	str_ = str_//'>>>'//line_feed
+
+end function tokens_to_str
+
+function kind_name(kind)
+	integer, intent(in) :: kind
+	character(len = :), allocatable :: kind_name
+	character(len = *), parameter :: names(*) = [ &
+			"EOF_TOKEN        ", & ! 1
+			"BAD_TOKEN        ", & ! 2
+			"WHITESPACE_TOKEN ", & ! 3
+			"I64_TOKEN        ", & ! 4
+			"I64_TYPE         ", & ! 5
+			"PLUS_TOKEN       ", & ! 6
+			"MINUS_TOKEN      ", & ! 7
+			"HASH_TOKEN       ", & ! 8
+			"COMMA_TOKEN      ", & ! 9
+			"COLON_TOKEN      ", & ! 10
+			"RBRACKET_TOKEN   ", & ! 11
+			"LBRACKET_TOKEN   ", & ! 12
+			"RBRACE_TOKEN     ", & ! 13
+			"LBRACE_TOKEN     ", & ! 14
+			"STR_TYPE         ", & ! 15
+			"STR_TOKEN        ", & ! 16
+			"unknown          "  & ! inf (trailing comma hack)
+		]
+
+	if (.not. (1 <= kind .and. kind <= size(names))) then
+		kind_name = "unknown"
+		return
+	end if
+	kind_name = trim(names(kind))
+
+end function kind_name
 
 end module jsonf
 
