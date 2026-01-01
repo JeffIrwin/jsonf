@@ -10,6 +10,10 @@ module jsonf
 	! - test heterogeneous arrays
 	! - test `null` literal
 	! - test nested objects/arrays
+	!   * test nested objs where inner obj has same keys as outer obj
+	! - check json-fortran, jq, and other similar projects for features to add
+	! - test re-entry with re-using one object to load multiple JSON inputs in
+	!   sequence. might find bugs with things that need to be deallocated first
 	! - test error handling: invalid tokens, unterminated strings, invalid numbers
 	! - test large files
 	! - test unicode in strings
@@ -223,6 +227,8 @@ function lex(lexer) result(token)
 		do
 			! TODO: test str escape rules. Only 8 characters or a unicode sequence are allowed to follow a backslash
 			if (lexer%current() == "\") then
+				lexer%pos = lexer%pos + 1
+				call sb%push(lexer%current())
 				lexer%pos = lexer%pos + 1
 			end if
 
@@ -478,14 +484,12 @@ function val_to_str(this) result(str_)
 	sb = new_str_builder()
 	select case (this%type)
 	case (STR_TYPE)
-		call sb%push("str: "//quote(this%sca%str))
+		call sb%push("str: <"//this%sca%str//">")
 	case (I64_TYPE)
 		call sb%push("i64: "//to_str(this%sca%i64))
 	case (OBJ_TYPE)
-		!call sb%push("object: {...}")
 		call sb%push("object: "//obj_to_str(this))
 	case default
-		!call sb%push("val_to_str: unknown type "//kind_name(this%type))
 		call panic("val_to_str: unknown type "//kind_name(this%type))
 	end select
 	str_ = sb%trim()
@@ -626,8 +630,6 @@ subroutine set_map(json, key, val)
 	n0 = size(json%key)
 	if (json%nkey * 2 >= n0) then
 		! Resize the entries array if load factor exceeds 0.5
-		print *, "********************************"
-		print *, "RESIZING MAP from "//to_str(n0)//" to "//to_str(n0*2)
 		n = n0 * 2
 		call move_alloc(json%key, old_keys)
 		call move_alloc(json%val, old_vals)
@@ -653,7 +655,7 @@ subroutine set_map_core(json, key, val)
 	!********
 	integer(8) :: hash, idx, n
 
-	print *, "set_map_core: key = "//quote(key)
+	!print *, "set_map_core: key = "//quote(key)
 
 	hash = djb2_hash(key)
 	n = size(json%key)
@@ -661,26 +663,18 @@ subroutine set_map_core(json, key, val)
 	do
 		if (.not. allocated(json%key(idx)%str)) then
 			! Empty slot found, insert new entry
-			print *, "empty slot"
 			json%key(idx)%str = key
-
-			! TODO: this crashes on recursion. I guess I need a deep copy constructor like syntran :(
-			!json%val(idx) = val
-			!call move_val(json%val(idx), val)
 			call move_val(val, json%val(idx))
-
 			json%nkey = json%nkey + 1
 			exit
 		else if (is_str_eq(json%key(idx)%str, key)) then
 			! Key already exists, update value
 			!
 			! TODO: ban duplicate keys by default, option to allow
-			print *, "updating existing key"
 			json%val(idx) = val
 			exit
 		else
 			! Collision, try next index (linear probing)
-			print *, "collision"
 			idx = mod(idx, n) + 1
 		end if
 	end do
