@@ -16,7 +16,8 @@ module jsonf
 	end type val_t
 
 	type token_t
-		integer :: kind, pos
+		integer :: kind
+		integer(kind=8) :: pos
 		character(len=:), allocatable :: text
 		type(val_t) :: val
 	end type token_t
@@ -75,7 +76,7 @@ character function lexer_peek(lexer, offset)
 	class(lexer_t) :: lexer
 	integer, intent(in) :: offset
 	!********
-	integer :: pos
+	integer(kind=8) :: pos
 
 	pos = lexer%pos + offset
 	if (pos < 1 .or. pos > len(lexer%text)) then
@@ -88,10 +89,10 @@ end function lexer_peek
 function new_literal_value(type, bool, i64, f64, str_) result(val)
 	integer, intent(in) :: type
 	!********
-	integer(kind=8), intent(in), optional :: i64
-	real   (kind=8), intent(in), optional :: f64
-	logical          , intent(in), optional :: bool
-	character(len=*) , intent(in), optional :: str_
+	integer(kind=8) , intent(in), optional :: i64
+	real   (kind=8) , intent(in), optional :: f64
+	logical         , intent(in), optional :: bool
+	character(len=*), intent(in), optional :: str_
 	type(val_t) :: val
 
 	val%type = type
@@ -103,10 +104,10 @@ function new_literal_value(type, bool, i64, f64, str_) result(val)
 
 end function new_literal_value
 
-function quote(str) result(quoted)
+function quote(str)
 	character(len=*), intent(in) :: str
-	character(len=:), allocatable :: quoted
-	quoted = '"'//str//'"'
+	character(len=:), allocatable :: quote
+	quote = '"'//str//'"'
 end function quote
 
 function lex(lexer) result(token)
@@ -116,8 +117,8 @@ function lex(lexer) result(token)
 	!********
 	character(len=:), allocatable :: text, text_strip
 	integer :: io
-	integer(kind=8) :: start, end_, suffix_start, suffix_end, i64
-	logical :: float
+	integer(kind=8) :: start, end_, i64
+	logical :: float_
 	type(str_builder_t) :: sb
 	type(val_t) :: val
 
@@ -145,14 +146,14 @@ function lex(lexer) result(token)
 	if (is_digit_under(lexer%current())) then
 		! Numeric decimal integer or float
 
-		float = .false.
+		float_ = .false.
 
 		do while (is_float_under(lexer%current()))
 
 			if (is_sign(lexer%current()) .and. .not. &
 				is_expo(lexer%peek(-1))) exit
 
-			float = float .or. .not. is_digit_under(lexer%current())
+			float_ = float_ .or. .not. is_digit_under(lexer%current())
 
 			lexer%pos = lexer%pos + 1
 		end do
@@ -161,7 +162,7 @@ function lex(lexer) result(token)
 		text = lexer%text(start: end_ - 1)
 		text_strip = rm_char(text, "_")
 
-		if (float) then
+		if (float_) then
 			call panic("float parsing not implemented yet")  ! TODO
 		else  ! i64
 			read(text_strip, *, iostat = io) i64
@@ -257,6 +258,7 @@ function lex(lexer) result(token)
 			!call lexer%diagnostics%push( &
 			!	err_unexpected_char(lexer%context, &
 			!	span, lexer%current()))
+			call panic("unexpected character: "//quote(lexer%current()))
 
 	end select
 
@@ -357,6 +359,9 @@ function new_parser(str_, src_file) result(parser)
 	type(token_vec_t) :: tokens
 
 	! Lex and get an array of tokens
+	!
+	! TODO: can we make a streaming tokenizer to get one (or a few lookahead)
+	! tokens at a time instead of making an array of all tokens up front?
 	tokens = new_token_vec()
 	lexer = new_lexer(str_, src_file)
 	do
@@ -389,19 +394,14 @@ subroutine push_token(vector, val)
 	type(token_t), allocatable :: tmp(:)
 
 	vector%len_ = vector%len_ + 1
-
 	if (vector%len_ > vector%cap) then
-		!print *, 'growing vector'
-
 		tmp_cap = 2 * vector%len_
 		allocate(tmp( tmp_cap ))
 		tmp(1: vector%cap) = vector%v
 
 		call move_alloc(tmp, vector%v)
 		vector%cap = tmp_cap
-
 	end if
-
 	vector%v( vector%len_ ) = val
 
 end subroutine push_token
