@@ -140,7 +140,7 @@ subroutine push_str_builder(sb, val)
 	! whole primitive str of len > 1
 
 	class(str_builder_t), intent(inout) :: sb
-	character, intent(in) :: val
+	character(len=*), intent(in) :: val
 
 	!********
 
@@ -150,12 +150,12 @@ subroutine push_str_builder(sb, val)
 
 	!print *, "pushing """//val//""""
 
-	sb%len = sb%len + 1
+	sb%len = sb%len + len(val)
 	if (sb%len > sb%cap) then
 		!print *, 'growing str'
 
 		! Grow the buffer capacity.  What is the optimal growth factor?
-		tmp_cap = 2 * sb%cap
+		tmp_cap = 2 * sb%len
 		allocate(character(len = tmp_cap) :: tmp)
 		tmp(1: sb%cap) = sb%str
 
@@ -163,7 +163,7 @@ subroutine push_str_builder(sb, val)
 		sb%cap = tmp_cap
 
 	end if
-	sb%str(sb%len: sb%len) = val
+	sb%str(sb%len - len(val) + 1: sb%len) = val
 
 end subroutine push_str_builder
 

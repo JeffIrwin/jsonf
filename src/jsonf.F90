@@ -411,16 +411,19 @@ module function tokens_to_str(parser) result(str_)
 	character(len = :), allocatable :: str_
 	!********
 	integer :: i
+	type(str_builder_t) :: sb
 
-	! TODO: str_builder_t
-	str_ = 'tokens = '//line_feed//'<<<'//line_feed
+	sb = new_str_builder()
+	call sb%push('tokens = '//line_feed//'<<<'//line_feed)
 	do i = 1, size(parser%tokens)
-		str_ = str_//tab &
-				//'<'//           parser%tokens(i)%text  //'> ' &
-				//'<'//kind_name( parser%tokens(i)%kind )//'>'  &
-				//line_feed
+		call sb%push("    " &
+			//"<"//           parser%tokens(i)%text  //"> " &
+			//"<"//kind_name( parser%tokens(i)%kind )//">"  &
+			//line_feed &
+		)
 	end do
-	str_ = str_//'>>>'//line_feed
+	call sb%push(">>>"//line_feed)
+	str_ = sb%trim()
 
 end function tokens_to_str
 
