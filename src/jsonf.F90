@@ -43,11 +43,12 @@ module jsonf
 
 		!type(arr_t) :: arr  ! TODO: arrays
 
-		!contains
+		contains
+			procedure :: &
+				to_str => val_to_str
 		!	procedure :: is_scalar => val_is_scalar
 		!	procedure :: is_object => val_is_object
 		!	procedure :: is_array  => val_is_array
-		!	procedure :: to_str    => val_to_str
 	end type val_t
 
 	type json_t
@@ -88,6 +89,7 @@ module jsonf
 	end type lexer_t
 
 	integer, parameter :: &
+		OBJ_TYPE         = 17, &
 		STR_TOKEN        = 16, &
 		STR_TYPE         = 15, &
 		LBRACE_TOKEN     = 14, &
@@ -383,14 +385,14 @@ subroutine read_file_json(json, filename)
 end subroutine read_file_json
 
 subroutine read_str_json(json, str)
-	class(json_t) :: json
+	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: str
 	!********
 	call json%parse(str)
 end subroutine read_str_json
 
 subroutine parse_json(json, str)
-	class(json_t) :: json
+	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: str
 	!********
 	integer(kind=8) :: pos
@@ -433,7 +435,7 @@ end subroutine parse_json
 
 subroutine parse_root(json, tokens, pos)
 	!class(json_t) :: json
-	type(val_t) :: json
+	type(val_t), intent(out) :: json
 	type(token_vec_t) :: tokens
 	integer(kind=8), intent(inout) :: pos
 	!********
@@ -460,67 +462,106 @@ subroutine parse_root(json, tokens, pos)
 
 end subroutine parse_root
 
-subroutine parse_obj(json, tokens, pos)
-	type(val_t) :: json
+subroutine match(tokens, pos, kind)
+	! TODO: return a token as a fn? Might be useful to have the matched token's position in case of later diagnostics
+	type(token_vec_t) :: tokens
+	integer(kind=8), intent(inout) :: pos
+	integer, intent(in) :: kind
+	!********
+	if (tokens%vec(pos)%kind == kind) then
+		pos = pos + 1
+		return
+	end if
+
+	! Syntran just advances to the next token on mismatch. Does that have an advantage?
+	call panic("expected token of kind")
+
+end subroutine match
+
+function val_to_str(this) result(str_)
+	class(val_t) :: this
+	character(len = :), allocatable :: str_
+	!********
+	type(str_builder_t) :: sb
+	sb = new_str_builder()
+	select case (this%type)
+	case (STR_TYPE)
+		call sb%push("str: "//quote(this%sca%str))
+	case (I64_TYPE)
+		call sb%push("i64: "//to_str(this%sca%i64))
+	case (OBJ_TYPE)
+		call sb%push("object: {...}")
+		! TODO: recurse
+	case default
+		call sb%push("val_to_str: unknown type "//kind_name(this%type))
+	end select
+	str_ = sb%trim()
+end function val_to_str
+
+subroutine parse_val(json, tokens, pos)
+	type(val_t), intent(out) :: json
 	type(token_vec_t) :: tokens
 	integer(kind=8), intent(inout) :: pos
 	!********
+	select case (tokens%vec(pos)%kind)
+	case (STR_TOKEN)
+		!print *, "value (string) = ", tokens%vec(pos)%sca%str
+		json%type = STR_TYPE
+		json%sca = tokens%vec(pos)%sca
+		pos = pos + 1
+	case (I64_TOKEN)
+		!print *, "value (i64) = ", tokens%vec(pos)%sca%i64
+		json%type = I64_TYPE
+		json%sca = tokens%vec(pos)%sca
+		pos = pos + 1
+	case default
+		call panic("unexpected value type in object")
+	end select
+end subroutine parse_val
+
+subroutine parse_obj(json, tokens, pos)
+	type(val_t), intent(out) :: json
+	type(token_vec_t) :: tokens
+	integer(kind=8), intent(inout) :: pos
+	!********
+	character(len=:), allocatable :: key
+	type(val_t) :: val
+
 	print *, "Starting parse_obj()"
 	print *, "pos = ", pos
 
-	! TODO: match subroutine
-	if (tokens%vec(pos)%kind /= LBRACE_TOKEN) then
-		call panic("expected '{' at start of object")
-	end if
-	pos = pos + 1  ! consume '{'
+	call match(tokens, pos, LBRACE_TOKEN)
+	json%type = OBJ_TYPE
 
 	do
 		if (tokens%vec(pos)%kind == RBRACE_TOKEN) then
 			! End of object
-			pos = pos + 1  ! consume '}'
+			pos = pos + 1
 			exit
 		end if
 
-		! Expect string key
-		if (tokens%vec(pos)%kind /= STR_TOKEN) then
-			call panic("expected string key in object")
-		end if
-		print *, "key = ", tokens%vec(pos)%sca%str
-		pos = pos + 1  ! consume key
+		call match(tokens, pos, STR_TOKEN)
+		key = tokens%vec(pos-1)%sca%str
+		print *, "key = ", key
 
-		! Expect colon
-		if (tokens%vec(pos)%kind /= COLON_TOKEN) then
-			call panic("expected ':' after key in object")
-		end if
-		pos = pos + 1  ! consume ':'
-
-		! TODO: make this a parse_value() subroutine for possible recursion
-
-		! Expect value
-		select case (tokens%vec(pos)%kind)
-		case (STR_TOKEN)
-			print *, "value (string) = ", tokens%vec(pos)%sca%str
-			pos = pos + 1  ! consume value
-		case (I64_TOKEN)
-			print *, "value (i64) = ", tokens%vec(pos)%sca%i64
-			pos = pos + 1  ! consume value
-		case default
-			call panic("unexpected value type in object")
-		end select
+		call match(tokens, pos, COLON_TOKEN)
+		call parse_val(val, tokens, pos)
+		print *, "val = ", val%to_str()
 
 		! TODO: store key-value pair in json object
 
 		! Expect comma or end of object
-		if (tokens%vec(pos)%kind == COMMA_TOKEN) then
-			pos = pos + 1  ! consume ','
-		else if (tokens%vec(pos)%kind == RBRACE_TOKEN) then
+		select case (tokens%vec(pos)%kind)
+		case (COMMA_TOKEN)
+			! TODO: test trailing commas. Make them an error by default but provide option to allow
+			pos = pos + 1
+		case (RBRACE_TOKEN)
 			! End of object
-			pos = pos + 1  ! consume '}'
+			pos = pos + 1
 			exit
-		else
+		case default
 			call panic("expected ',' or '}' after key-value pair in object")
-		end if
-
+		end select
 	end do
 
 end subroutine parse_obj
@@ -595,6 +636,7 @@ function kind_name(kind)
 			"LBRACE_TOKEN     ", & ! 14
 			"STR_TYPE         ", & ! 15
 			"STR_TOKEN        ", & ! 16
+			"OBJ_TYPE         ", & ! 17
 			"unknown          "  & ! inf (trailing comma hack)
 		]
 
