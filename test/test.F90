@@ -9,7 +9,8 @@ contains
 
 subroutine test_in1()
 	character(len=:), allocatable :: str, filename
-	type(parser_t) :: parser
+	!type(parser_t) :: parser
+	type(json_t) :: json
 
 	write(*,*) "Starting test_in1()"
 
@@ -17,7 +18,8 @@ subroutine test_in1()
 	str = read_file(filename)
 	print *, "str = "//LINE_FEED//str
 
-	parser = new_parser(str, filename)
+	!parser = new_parser(str, filename)
+	json = read_json(str)
 
 end subroutine test_in1
 

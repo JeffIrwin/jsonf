@@ -34,23 +34,27 @@ module jsonf
 		character(len=:), allocatable :: str
 	end type sca_t
 
-	type obj_t
-		! JSON object type
-		type(str_vec_t) :: keys
-		!type(val_vec_t) :: values
-		type(val_t), allocatable :: values(:)
+	!type obj_t
+	!	! JSON object type
+	!	type(str_vec_t) :: keys
+	!	!type(val_vec_t) :: values
+	!	type(val_t), allocatable :: values(:)
 
-		!contains
-		!	procedure :: get_value_by_key => obj_get_value_by_key
-		!	procedure :: has_key          => obj_has_key
-		!	procedure :: to_str           => obj_to_str
-	end type obj_t
+	!	!contains
+	!	!	procedure :: get_value_by_key => obj_get_value_by_key
+	!	!	procedure :: has_key          => obj_has_key
+	!	!	procedure :: to_str           => obj_to_str
+	!end type obj_t
 
 	type val_t
 		! JSON value type -- scalar, array, or object
 		integer :: type
 		type(sca_t) :: sca
-		type(obj_t), allocatable :: obj  ! TODO: probably needs to be allocatable
+
+		!type(obj_t), allocatable :: obj  ! TODO: probably needs to be allocatable
+		type(str_vec_t) :: key
+		type(val_t), allocatable :: val(:)
+
 		!type(arr_t) :: arr  ! TODO: arrays
 
 		!contains
@@ -60,6 +64,21 @@ module jsonf
 		!	procedure :: to_str    => val_to_str
 	end type val_t
 
+	type json_t
+		! JSON top-level type
+		!type(val_t), allocatable :: root
+		type(val_t) :: root
+
+		contains
+			!procedure :: to_str => json_to_str
+			procedure :: &
+				!to_str    => to_str_json, &
+				read_file => read_file_json, &
+				read_str  => read_str_json, &
+				parse     => parse_json
+
+	end type json_t
+
 	type token_t
 		integer :: kind
 		integer(kind=8) :: pos
@@ -68,10 +87,12 @@ module jsonf
 	end type token_t
 
 	type token_vec_t
-		type(token_t), allocatable :: v(:)
+		type(token_t), allocatable :: vec(:)
 		integer(kind=8) :: len_, cap
 		contains
-			procedure :: push => push_token
+			procedure :: &
+				push => push_token, &
+				trim => trim_token_vec
 	end type token_vec_t
 
 	type parser_t
@@ -324,7 +345,7 @@ function new_token_vec() result(vec)
 
 	vec%len_ = 0
 	vec%cap = 2  ! I think a small default makes sense here
-	allocate(vec%v( vec%cap ))
+	allocate(vec%vec( vec%cap ))
 end function new_token_vec
 
 function new_lexer(text, src_file) result(lexer)
@@ -389,7 +410,111 @@ function new_lexer(text, src_file) result(lexer)
 
 end function new_lexer
 
+subroutine read_file_json(json, filename)
+	class(json_t) :: json
+	character(len=*), intent(in) :: filename
+	!********
+	character(len=:), allocatable :: str
+
+	! TODO: stream chars one at a time
+	str = read_file(filename)
+	!json = read_json(str)
+	!call parse_json()
+	call json%parse(str)
+
+end subroutine read_file_json
+
+subroutine read_str_json(json, str)
+	class(json_t) :: json
+	character(len=*), intent(in) :: str
+	!********
+	!json = read_json(str)
+	call json%parse(str)
+end subroutine read_str_json
+
+subroutine parse_json(json, str)
+	class(json_t) :: json
+	character(len=*), intent(in) :: str
+	!********
+	integer(kind=8) :: pos
+	type(lexer_t) :: lexer
+	type(token_t) :: token
+	type(token_vec_t) :: tokens
+
+	! Lex and get an array of tokens
+	!
+	! TODO: can we make a streaming tokenizer to get one (or a few lookahead)
+	! tokens at a time instead of making an array of all tokens up front?
+	tokens = new_token_vec()
+	lexer = new_lexer(str, "<dummy-filename>")
+	do
+		token = lexer%lex()
+
+		if (token%kind /= WHITESPACE_TOKEN .and. &
+		    token%kind /= BAD_TOKEN) then
+			call tokens%push(token)
+		end if
+
+		if (token%kind == EOF_TOKEN) exit
+	end do
+	!tokens = tokens%vec(1: tokens%len_)  ! trim
+	call tokens%trim()
+
+	pos = 1
+	!print *, 'tokens%len_ = ', tokens%len_
+
+	if (DEBUG > 0) then
+		write(*,*) tokens_to_str(tokens)
+	end if
+
+	write(*,*) "Parsing JSON tokens ..."
+
+end subroutine parse_json
+
+function read_json(str) result(json)
+	! TODO: delete
+	!
+	! TODO: take an abstract `input` obj instead of str, in case of streaming from file vs whole string
+	character(len=*), intent(in) :: str
+	type(json_t) :: json
+	!********
+	integer(kind=8) :: pos
+	type(lexer_t) :: lexer
+	type(token_t) :: token
+	type(token_vec_t) :: tokens
+
+	! Lex and get an array of tokens
+	!
+	! TODO: can we make a streaming tokenizer to get one (or a few lookahead)
+	! tokens at a time instead of making an array of all tokens up front?
+	tokens = new_token_vec()
+	lexer = new_lexer(str, "<dummy-filename>")
+	do
+		token = lexer%lex()
+
+		if (token%kind /= WHITESPACE_TOKEN .and. &
+		    token%kind /= BAD_TOKEN) then
+			call tokens%push(token)
+		end if
+
+		if (token%kind == EOF_TOKEN) exit
+	end do
+	!tokens = tokens%vec(1: tokens%len_)  ! trim
+	call tokens%trim()
+
+	pos = 1
+	!print *, 'tokens%len_ = ', tokens%len_
+
+	if (DEBUG > 0) then
+		write(*,*) tokens_to_str(tokens)
+	end if
+
+	write(*,*) "Parsing JSON tokens ..."
+
+end function read_json
+
 function new_parser(str_, src_file) result(parser)
+	! TODO: delete
 	character(len = *), intent(in) :: str_, src_file
 	type(parser_t) :: parser
 	!********
@@ -413,40 +538,56 @@ function new_parser(str_, src_file) result(parser)
 
 		if (token%kind == EOF_TOKEN) exit
 	end do
-	parser%tokens = tokens%v(1: tokens%len_)
+	!parser%tokens = tokens%vec(1: tokens%len_)
 
-	! Set other parser members
-	parser%pos = 1
-	!print *, 'tokens%len_ = ', tokens%len_
+	!! Set other parser members
+	!parser%pos = 1
+	!!print *, 'tokens%len_ = ', tokens%len_
 
 	if (DEBUG > 0) then
-		write(*,*) tokens_to_str(parser)
+		write(*,*) tokens_to_str(tokens)
 	end if
 
 end function new_parser
 
-subroutine push_token(vector, val)
-	class(token_vec_t) :: vector
+subroutine trim_token_vec(this)
+	class(token_vec_t) :: this
+	!********
+	type(token_t), allocatable :: tmp(:)
+
+	this%vec = this%vec(1: this%len_)
+	this%cap = this%len_
+
+	!allocate(tmp( this%len_ ))
+	!tmp = this%vec(1: this%len_)
+
+	!call move_alloc(tmp, this%vec)
+	!this%cap = this%len_
+
+end subroutine trim_token_vec
+
+subroutine push_token(vec, val)
+	class(token_vec_t) :: vec
 	type(token_t) :: val
 	!********
 	integer(kind=8) :: tmp_cap
 	type(token_t), allocatable :: tmp(:)
 
-	vector%len_ = vector%len_ + 1
-	if (vector%len_ > vector%cap) then
-		tmp_cap = 2 * vector%len_
+	vec%len_ = vec%len_ + 1
+	if (vec%len_ > vec%cap) then
+		tmp_cap = 2 * vec%len_
 		allocate(tmp( tmp_cap ))
-		tmp(1: vector%cap) = vector%v
+		tmp(1: vec%cap) = vec%vec
 
-		call move_alloc(tmp, vector%v)
-		vector%cap = tmp_cap
+		call move_alloc(tmp, vec%vec)
+		vec%cap = tmp_cap
 	end if
-	vector%v( vector%len_ ) = val
+	vec%vec( vec%len_ ) = val
 
 end subroutine push_token
 
-module function tokens_to_str(parser) result(str_)
-	class(parser_t) :: parser
+module function tokens_to_str(tokens) result(str_)
+	type(token_vec_t) :: tokens
 	character(len = :), allocatable :: str_
 	!********
 	integer :: i
@@ -454,10 +595,10 @@ module function tokens_to_str(parser) result(str_)
 
 	sb = new_str_builder()
 	call sb%push('tokens = '//line_feed//'<<<'//line_feed)
-	do i = 1, size(parser%tokens)
+	do i = 1, tokens%len_
 		call sb%push("    " &
-			//"<"//           parser%tokens(i)%text  //"> " &
-			//"<"//kind_name( parser%tokens(i)%kind )//">"  &
+			//"<"//          tokens%vec(i)%text  //"> " &
+			//"<"//kind_name(tokens%vec(i)%kind )//">"  &
 			//line_feed &
 		)
 	end do

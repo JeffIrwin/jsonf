@@ -8,38 +8,30 @@ module jsonf__app
 
 contains
 
-subroutine test_in1()
-	character(len=:), allocatable :: str, filename
-	type(parser_t) :: parser
-
-	write(*,*) "Starting test_in1()"
-
-	filename = "data/in1.json"
-	str = read_file(filename)
-	print *, "str = "//LINE_FEED//str
-
-	parser = new_parser(str, filename)
-
-end subroutine test_in1
-
 subroutine app_read_file(filename)
 	character(len=*), intent(in) :: filename
 	character(len=:), allocatable :: str
-	type(parser_t) :: parser
+	!type(parser_t) :: parser
+	type(json_t) :: json
 
 	write(*,*) "Reading JSON from file: "//quote(filename)
-	str = read_file(filename)
-	print *, "str = "//LINE_FEED//str
-	parser = new_parser(str, filename)
+	!str = read_file(filename)
+	!print *, "str = "//LINE_FEED//str
+	!!parser = new_parser(str, filename)
+	!!json = read_json(str)
+	call json%read_file(filename)
 
 end subroutine app_read_file
 
 subroutine app_read_str(str)
 	character(len=*), intent(in) :: str
-	type(parser_t) :: parser
+	!type(parser_t) :: parser
+	type(json_t) :: json
 
 	write(*,*) "Reading JSON from string:"//LINE_FEED//"<<<"//str//">>>"
-	parser = new_parser(str, "<cmd_arg>")
+	!parser = new_parser(str, "<cmd_arg>")
+	!json = read_json(str)
+	call json%read_str(str)
 
 end subroutine app_read_str
 

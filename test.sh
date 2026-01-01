@@ -5,8 +5,9 @@ set -exu
 flags=()
 flags+=("-Wno-tabs")
 
-fpm install --prefix . --flag "${flags[@]}" && ./bin/jsonf -s '{"a123": 69, "x456": 420}'
+fpm test --flag "${flags[@]}"
+fpm run  --flag "${flags[@]}" -- data/in1.json
+fpm install --prefix . --flag "${flags[@]}"
 
-#fpm run -- data/in1.json
-#fpm test
+./bin/jsonf -s '{"a123": 69, "x456": 420}'
 
