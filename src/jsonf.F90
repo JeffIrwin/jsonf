@@ -39,8 +39,7 @@ module jsonf
 		type(sca_t) :: sca
 
 		integer(kind=8) :: nkey = 0
-		!type(str_vec_t) :: key
-		type(str_t), allocatable :: key(:)
+		type(str_t), allocatable :: key(:)  ! TODO: rename to keys/vals? Singular seems confusing
 		type(val_t), allocatable :: val(:)
 
 		!type(arr_t) :: arr  ! TODO: arrays
@@ -48,14 +47,10 @@ module jsonf
 		contains
 			procedure :: &
 				to_str => val_to_str
-		!	procedure :: is_scalar => val_is_scalar
-		!	procedure :: is_object => val_is_object
-		!	procedure :: is_array  => val_is_array
 	end type val_t
 
 	type json_t
 		! JSON top-level type
-		!type(val_t), allocatable :: root
 		type(val_t) :: root
 
 		contains
@@ -418,10 +413,8 @@ subroutine parse_json(json, str)
 
 		if (token%kind == EOF_TOKEN) exit
 	end do
-	!tokens = tokens%vec(1: tokens%len_)  ! trim
 	call tokens%trim()
 
-	pos = 1
 	!print *, 'tokens%len_ = ', tokens%len_
 
 	if (DEBUG > 0) then
@@ -431,12 +424,12 @@ subroutine parse_json(json, str)
 	write(*,*) "Parsing JSON tokens ..."
 
 	! Maybe a parser type would be useful to encapsulate pos and diagnostics
+	pos = 1
 	call parse_root(json%root, tokens, pos)
 
 end subroutine parse_json
 
 subroutine parse_root(json, tokens, pos)
-	!class(json_t) :: json
 	type(val_t), intent(out) :: json
 	type(token_vec_t) :: tokens
 	integer(kind=8), intent(inout) :: pos
@@ -450,8 +443,6 @@ subroutine parse_root(json, tokens, pos)
 		case (EOF_TOKEN)
 			exit
 		case (LBRACE_TOKEN)
-			! Object
-			!call panic("object parsing not implemented yet")  ! TODO
 			call parse_obj(json, tokens, pos)
 		case (LBRACKET_TOKEN)
 			! Array
@@ -459,9 +450,7 @@ subroutine parse_root(json, tokens, pos)
 		case default
 			call panic("expected object or array at root")
 		end select
-
 	end do
-
 end subroutine parse_root
 
 subroutine match(tokens, pos, kind)
@@ -516,6 +505,9 @@ subroutine parse_val(json, tokens, pos)
 		json%type = I64_TYPE
 		json%sca = tokens%vec(pos)%sca
 		pos = pos + 1
+	case (LBRACE_TOKEN)
+		call panic("nested object parsing not implemented yet")  ! TODO
+		!call parse_obj(json, tokens, pos)
 	case default
 		call panic("unexpected value type in object")
 	end select
@@ -535,7 +527,7 @@ subroutine parse_obj(json, tokens, pos)
 	call match(tokens, pos, LBRACE_TOKEN)
 	json%type = OBJ_TYPE
 
-	! Initialize map storage
+	! Initialize hash map storage
 	allocate(json%key(2))
 	allocate(json%val(2))
 	json%nkey = 0
@@ -555,8 +547,7 @@ subroutine parse_obj(json, tokens, pos)
 		call parse_val(val, tokens, pos)
 		print *, "val = ", val%to_str()
 
-		! store key-value pair in json object
-		!call set_map(json%key, json%val, key, val)
+		! Store key-value pair in json object
 		call set_map(json, key, val)
 
 		! Expect comma or end of object
@@ -565,7 +556,7 @@ subroutine parse_obj(json, tokens, pos)
 			! TODO: test trailing commas. Make them an error by default but provide option to allow
 			pos = pos + 1
 		case (RBRACE_TOKEN)
-			! End of object
+			! TODO: do we really need exit condition at top and bottom of loop? Make sure we handle empty objects
 			pos = pos + 1
 			exit
 		case default
@@ -589,63 +580,41 @@ subroutine print_map(prefix, json)
 	print *, prefix
 	do i = 1, size(json%key)
 		if (allocated(json%key(i)%str)) then
-			print *, "  key = "//quote(json%key(i)%str)// &
+			print *, &
+				"  key = "//quote(json%key(i)%str)// &
 				", val = "//json%val(i)%to_str()
 		end if
 	end do
 
 end subroutine print_map
 
-!subroutine set_map(keys, vals, key, val)
 subroutine set_map(json, key, val)
 	type(val_t), intent(inout) :: json
-	!type(str_t), allocatable :: keys(:)
-	!type(val_t), allocatable :: vals(:)
 	character(len=*), intent(in) :: key
 	type(val_t), intent(in) :: val
 	!********
 	integer(kind=8) :: i, n, n0
-	!type(map_entry_i64_t), allocatable :: old_entries(:)
 	type(str_t), allocatable :: old_keys(:)
 	type(val_t), allocatable :: old_vals(:)
 
-	!n0 = size(keys)
 	n0 = size(json%key)
 	if (json%nkey * 2 >= n0) then
 		! Resize the entries array if load factor exceeds 0.5
 		n = n0 * 2
-		!call move_alloc(this%entries, old_entries)
 		call move_alloc(json%key, old_keys)
 		call move_alloc(json%val, old_vals)
-		!allocate(this%entries(n))
 		allocate(json%key(n))
 		allocate(json%val(n))
 		json%nkey = 0
 		do i = 1, n0
 			if (allocated(old_keys(i)%str)) then
-				!call json%set_core(old_keys(i), old_vals(i))
 				call set_map_core(json, old_keys(i)%str, old_vals(i))
 			end if
 		end do
 		deallocate(old_keys)
 		deallocate(old_vals)
 	end if
-
-	!call this%set_core(key, val)
 	call set_map_core(json, key, val)
-
-	!integer :: n
-	!n = size(keys)
-	!if (n == 0) then
-	!	allocate(keys(1))
-	!	allocate(vals(1))
-	!	keys(1) = key
-	!	vals(1) = val
-	!else
-	!	! Append to existing arrays
-	!	keys = [keys, key]
-	!	vals = [vals, val]
-	!end if
 
 end subroutine set_map
 
@@ -659,17 +628,12 @@ subroutine set_map_core(json, key, val)
 	print *, "set_map_core: key = "//quote(key)
 
 	hash = djb2_hash(key)
-	!n = size(this%entries)
 	n = size(json%key)
 	idx = mod(hash, n) + 1
 	do
-		!if (.not. allocated(this%entries(idx)%key)) then
 		if (.not. allocated(json%key(idx)%str)) then
 			! Empty slot found, insert new entry
-			print *, "empty slot"
-			!this%entries(idx)%key = key
 			json%key(idx)%str = key
-			!this%entries(idx)%val = val
 			json%val(idx) = val
 			json%nkey = json%nkey + 1
 			exit
@@ -677,12 +641,10 @@ subroutine set_map_core(json, key, val)
 			! Key already exists, update value
 			!
 			! TODO: ban duplicate keys by default, option to allow
-			print *, "update existing"
 			json%val(idx) = val
 			exit
 		else
 			! Collision, try next index (linear probing)
-			print *, "collision"
 			idx = mod(idx, n) + 1
 		end if
 	end do
