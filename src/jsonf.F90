@@ -426,7 +426,104 @@ subroutine parse_json(json, str)
 
 	write(*,*) "Parsing JSON tokens ..."
 
+	! Maybe a parser type would be useful to encapsulate pos and diagnostics
+	call parse_root(json%root, tokens, pos)
+
 end subroutine parse_json
+
+subroutine parse_root(json, tokens, pos)
+	!class(json_t) :: json
+	type(val_t) :: json
+	type(token_vec_t) :: tokens
+	integer(kind=8), intent(inout) :: pos
+	!********
+	print *, "Starting parse_root()"
+	print *, "pos = ", pos
+	do
+		print *, "tok kind = ", kind_name(tokens%vec(pos)%kind)
+
+		select case (tokens%vec(pos)%kind)
+		case (EOF_TOKEN)
+			exit
+		case (LBRACE_TOKEN)
+			! Object
+			!call panic("object parsing not implemented yet")  ! TODO
+			call parse_obj(json, tokens, pos)
+		case (LBRACKET_TOKEN)
+			! Array
+			call panic("array parsing not implemented yet")  ! TODO
+		case default
+			call panic("expected object or array at root")
+		end select
+
+	end do
+
+end subroutine parse_root
+
+subroutine parse_obj(json, tokens, pos)
+	type(val_t) :: json
+	type(token_vec_t) :: tokens
+	integer(kind=8), intent(inout) :: pos
+	!********
+	print *, "Starting parse_obj()"
+	print *, "pos = ", pos
+
+	! TODO: match subroutine
+	if (tokens%vec(pos)%kind /= LBRACE_TOKEN) then
+		call panic("expected '{' at start of object")
+	end if
+	pos = pos + 1  ! consume '{'
+
+	do
+		if (tokens%vec(pos)%kind == RBRACE_TOKEN) then
+			! End of object
+			pos = pos + 1  ! consume '}'
+			exit
+		end if
+
+		! Expect string key
+		if (tokens%vec(pos)%kind /= STR_TOKEN) then
+			call panic("expected string key in object")
+		end if
+		print *, "key = ", tokens%vec(pos)%sca%str
+		pos = pos + 1  ! consume key
+
+		! Expect colon
+		if (tokens%vec(pos)%kind /= COLON_TOKEN) then
+			call panic("expected ':' after key in object")
+		end if
+		pos = pos + 1  ! consume ':'
+
+		! TODO: make this a parse_value() subroutine for possible recursion
+
+		! Expect value
+		select case (tokens%vec(pos)%kind)
+		case (STR_TOKEN)
+			print *, "value (string) = ", tokens%vec(pos)%sca%str
+			pos = pos + 1  ! consume value
+		case (I64_TOKEN)
+			print *, "value (i64) = ", tokens%vec(pos)%sca%i64
+			pos = pos + 1  ! consume value
+		case default
+			call panic("unexpected value type in object")
+		end select
+
+		! TODO: store key-value pair in json object
+
+		! Expect comma or end of object
+		if (tokens%vec(pos)%kind == COMMA_TOKEN) then
+			pos = pos + 1  ! consume ','
+		else if (tokens%vec(pos)%kind == RBRACE_TOKEN) then
+			! End of object
+			pos = pos + 1  ! consume '}'
+			exit
+		else
+			call panic("expected ',' or '}' after key-value pair in object")
+		end if
+
+	end do
+
+end subroutine parse_obj
 
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
