@@ -62,13 +62,19 @@ module jsonf
 		!type(arr_t) :: arr  ! TODO: arrays
 
 		contains
-			procedure :: &
-				to_str => val_to_str
+			!procedure :: &
+			!	to_str => val_to_str
 	end type val_t
 
+	character(len=*), parameter :: INDENT_DEFAULT = "    "
 	type json_t
 		! JSON top-level type
 		type(val_t) :: root
+
+		character(len=:), allocatable :: indent
+		!character(len=:), allocatable :: indent = "    "
+		!character(len=*) :: indent = "    "
+		integer :: indent_level
 
 		contains
 			procedure :: &
@@ -508,8 +514,9 @@ subroutine match(lexer, kind)
 end subroutine match
 
 ! Do these need to be declared recursive? I remember certain fortran compilers being picky about it, even though it's only inderictly recursive.  Same with obj_to_str()
-recursive function val_to_str(this) result(str)
-	class(val_t) :: this
+recursive function val_to_str(json, this) result(str)
+	type(json_t), intent(inout) :: json
+	type(val_t), intent(in) :: this
 	character(len = :), allocatable :: str
 	!********
 	! Don't need a str_builder here since val_t is a single value
@@ -519,7 +526,7 @@ recursive function val_to_str(this) result(str)
 	case (I64_TYPE)
 		str = to_str(this%sca%i64)
 	case (OBJ_TYPE)
-		str = obj_to_str(this)
+		str = obj_to_str(json, this)
 	case default
 		call panic("val_to_str: unknown type "//kind_name(this%type))
 	end select
@@ -539,7 +546,10 @@ subroutine write_json(this, filename, unit_)
 	else
 		unit__ = OUTPUT_UNIT
 	end if
-	write(unit__, "(a)") this%root%to_str()
+
+	!write(unit__, "(a)") this%root%to_str()
+	!write(unit__, "(a)") val_to_str(this, this%root)
+	write(unit__, "(a)") json_to_str(this)
 
 	if (present(filename)) then
 		print *, "Closing unit "//to_str(unit__)
@@ -562,15 +572,22 @@ function json_to_str(this) result(str)
 	class(json_t) :: this
 	character(len = :), allocatable :: str
 	!********
-	str = this%root%to_str()
+	!str = this%root%to_str()
+	if (.not. allocated(this%indent)) then
+		! I would just initialize this in the type declaration but Fortran is redacted
+		this%indent = INDENT_DEFAULT
+	end if
+	this%indent_level = 0
+	str = val_to_str(this, this%root)
 end function json_to_str
-
-recursive function obj_to_str(this) result(str)
-	! TODO: pass through a json_t object with indent level
-	class(val_t) :: this
+	
+recursive function obj_to_str(json, this) result(str)
+	! TODO: rename `json` and `this` here and in related fns. This should just be val since it's not a class now
+	type(json_t), intent(inout) :: json
+	type(val_t), intent(in) :: this
 	character(len = :), allocatable :: str
 	!********
-	character(len=:), allocatable :: key_str, val_str
+	character(len=:), allocatable :: key_str, val_str, indent
 	integer(kind=8) :: i
 	type(str_builder_t) :: sb
 
@@ -581,17 +598,21 @@ recursive function obj_to_str(this) result(str)
 
 	sb = new_str_builder()
 	call sb%push("{"//LINE_FEED)
+	json%indent_level = json%indent_level + 1
+	indent = repeat(json%indent, json%indent_level)
 	do i = 1, size(this%key)
 		if (allocated(this%key(i)%str)) then
 			!write(ERROR_UNIT, *) "key = "//quote(this%key(i)%str)
 
 			key_str = quote(this%key(i)%str)  ! TODO: quote escaping
-			val_str = this%val(i)%to_str()
-			call sb%push(key_str//": "//val_str)
+			val_str = val_to_str(json, this%val(i))
+			call sb%push(indent//key_str//": "//val_str)
 			call sb%push(","//LINE_FEED)
 		end if
 	end do
-	call sb%push("}")
+	json%indent_level = json%indent_level - 1
+	indent = repeat(json%indent, json%indent_level)
+	call sb%push(indent//"}")
 	str = sb%trim()
 end function obj_to_str
 
@@ -672,27 +693,27 @@ subroutine parse_obj(lexer, json)
 
 	if (DEBUG > 0) then
 		write(*,*) "Finished parse_obj(), nkey = "//to_str(json%nkey)
-		call print_map("obj =", json)
+		!call print_map("obj =", json)
 	end if
 
 end subroutine parse_obj
 
-subroutine print_map(prefix, json)
-	character(len=*), intent(in) :: prefix
-	type(val_t), intent(in) :: json
-	!********
-	integer(kind=8) :: i
-
-	write(*,*) prefix
-	do i = 1, size(json%key)
-		if (allocated(json%key(i)%str)) then
-			write(*,*) &
-				"  key = "//quote(json%key(i)%str)// &
-				", val = "//json%val(i)%to_str()
-		end if
-	end do
-
-end subroutine print_map
+!subroutine print_map(prefix, json)
+!	character(len=*), intent(in) :: prefix
+!	type(val_t), intent(in) :: json
+!	!********
+!	integer(kind=8) :: i
+!
+!	write(*,*) prefix
+!	do i = 1, size(json%key)
+!		if (allocated(json%key(i)%str)) then
+!			write(*,*) &
+!				"  key = "//quote(json%key(i)%str)// &
+!				", val = "//json%val(i)%to_str()
+!		end if
+!	end do
+!
+!end subroutine print_map
 
 subroutine set_map(json, key, val)
 	type(val_t), intent(inout) :: json
