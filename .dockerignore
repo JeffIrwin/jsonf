@@ -1,0 +1,10 @@
+
+Dockerfile
+.dockerignore
+
+/build/
+/bin/
+
+.git/
+.github/
+
