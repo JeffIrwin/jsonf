@@ -84,7 +84,11 @@ module jsonf
 	type json_t
 		! JSON top-level type
 		type(val_t) :: root
+
+		! String and print output formatting options
 		character(len=:), allocatable :: indent
+		logical :: compact = .false.
+
 		integer :: indent_level
 
 		contains
@@ -590,7 +594,8 @@ recursive function obj_to_str(json, obj) result(str)
 	! TODO: add up an incrementor and compare to nkeys to decide when to omit last trailing comma
 
 	sb = new_str_builder()
-	call sb%push("{"//LINE_FEED)
+	call sb%push("{")
+	if (.not. json%compact) call sb%push(LINE_FEED)
 	json%indent_level = json%indent_level + 1
 	indent = repeat(json%indent, json%indent_level)
 	do i = 1, size(obj%keys)
@@ -599,17 +604,22 @@ recursive function obj_to_str(json, obj) result(str)
 
 			key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
 			val_str = val_to_str(json, obj%vals(i))
-			call sb%push(indent//key_str//": "//val_str)
+			if (.not. json%compact) call sb%push(indent)
+			call sb%push(key_str//":")
+			if (.not. json%compact) call sb%push(" ")
+			call sb%push(val_str)
 
 			!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
 			!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
 
-			call sb%push(","//LINE_FEED)
+			call sb%push(",")
+			if (.not. json%compact) call sb%push(LINE_FEED)
 		end if
 	end do
 	json%indent_level = json%indent_level - 1
 	indent = repeat(json%indent, json%indent_level)
-	call sb%push(indent//"}")
+	if (.not. json%compact) call sb%push(indent)
+	call sb%push("}")
 	str = sb%trim()
 end function obj_to_str
 

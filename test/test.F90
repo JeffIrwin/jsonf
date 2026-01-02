@@ -7,6 +7,11 @@ module jsonf__test
 
 contains
 
+! TODO: make a TEST_STR_EQ routine and macro to not just assert a bool, but also
+! log the expected and actualy str values.  Could even underline the first
+! different char and some surrounding context.  General-purpose diff is hard,
+! but not necessary
+
 #define TEST(val, msg, nfail, ntot) call test_(val, msg, nfail, ntot, __FILE__, __LINE__)
 subroutine test_(val, msg, nfail, ntot, file, line)
 	logical, intent(in) :: val
@@ -39,13 +44,22 @@ subroutine test_in1(nfail, ntot)
 	call json%read_str(str)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
+
+	! TODO: this will break depending on the hash ordering
 	expect = &
 		'{' // LINE_FEED // &
 		'    "c": "my str",' // LINE_FEED // &
 		'    "a": 1,' // LINE_FEED // &
 		'    "b": 2,' // LINE_FEED // &
 		'}'
-	TEST(is_str_eq(str_out, expect), "test_basic_jsons 1", nfail, ntot)
+	TEST(is_str_eq(str_out, expect), "test_in1 1", nfail, ntot)
+
+	json%compact = .true.
+	str_out = json%to_str()
+	expect = '{"c":"my str","a":1,"b":2,}'
+	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+
+	! TODO: add tests with multiple indentation depths and custom indent strs
 
 end subroutine test_in1
 
@@ -61,12 +75,19 @@ subroutine test_basic_jsons(nfail, ntot)
 	call json%read_str(str)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
+
+	! TODO: everything will break after trailing commas are removed
 	expect = &
 		'{'//LINE_FEED// &
 		'    "a": 1,'//LINE_FEED// &
 		'}'
 	!print *, "expect = ", expect
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 1", nfail, ntot)
+
+	json%compact = .true.
+	str_out = json%to_str()
+	expect = '{"a":1,}'
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2", nfail, ntot)
 
 end subroutine test_basic_jsons
 
