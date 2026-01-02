@@ -6,6 +6,8 @@ module jsonf
 
 	! TODO:
 	! - test object top-level json
+	! - test primitive top-level json, e.g. just an int, str, etc. not in an
+	!   object or array
 	! - test stream parsing
 	!   * lex 1 (or a couple lookahead) token(s) at a time
 	!   * beware the peek(-1) token (i.e. previous) in float lexer
@@ -473,6 +475,9 @@ subroutine parse_root(lexer, root)
 	!********
 	integer :: kind
 	if (DEBUG > 0) print *, "Starting parse_root()"
+	! TODO: this should just do parse_val() to correctly handle primitive
+	! top-level JSONs. Does parse_root() need to exist as a wrapper at all or
+	! should the caller just do parse_val() instead?
 	do
 		kind = lexer%current_kind()
 		if (DEBUG > 0) print *, "tok kind = ", kind_name(kind)
@@ -613,20 +618,31 @@ recursive function obj_to_str(json, obj) result(str)
 	character(len=:), allocatable :: indent
 	integer(kind=8) :: i, ii
 	integer(kind=8), allocatable :: idx(:)
+	logical, parameter :: last_dup = .true.
 	type(str_builder_t) :: sb
 
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
+	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
+	!write(ERROR_UNIT, *) "nvals = ", obj%nvals
+	!write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place
+	!write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place(obj%idx(1: obj%nkeys))
 
-	write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
-	write(ERROR_UNIT, *) "nvals = ", obj%nvals
-	write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place
-	!write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place(obj%idx(1: obj%nvals))
-	write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place(obj%idx(1: obj%nkeys))
-
-	idx = sort_index64(obj%place(obj%idx(1: obj%nkeys)))
-	!idx = sort_index64(obj%place(obj%idx(1: obj%nvals)))
-	write(ERROR_UNIT, *) "idx = ", idx
+	if (last_dup) then
+		! TODO: also set a flag when an actual duplicate is encountered in this
+		! obj. It may be allowed, but if most inputs have unique keys, we don't
+		! always need to sort
+		!
+		! Keeping the first dup instead of last would also simplify things --
+		! just don't overwrite the val in the first place when parsing, no
+		! sorting required
+		idx = sort_index64(obj%place(obj%idx(1: obj%nkeys)))
+		!write(ERROR_UNIT, *) "idx = ", idx
+		idx = obj%idx(idx)
+	else
+		! No sorting required here -- only if we keep the last duplicate
+		idx = obj%idx
+	end if
 
 	sb = new_str_builder()
 	call sb%push("{")
@@ -645,10 +661,7 @@ recursive function obj_to_str(json, obj) result(str)
 	else
 		do ii = 1, obj%nkeys
 			! TODO: omit trailing comma -- trivial for this case
-			!i = obj%idx(ii)
-			!i = idx(ii)
-			i = obj%idx( idx(ii) )
-			!i = idx( obj%idx(ii) )
+			i = idx(ii)
 			call sb%push(keyval_to_str(json, obj, i, indent))
 		end do
 	end if
@@ -821,11 +834,10 @@ subroutine set_map_core(obj, key, val)
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
 			!
-			! TODO: ban duplicate keys by default, option to allow. Maybe
-			! include an option for first vs last dupe key to take precedence
+			! TODO: add option to ban duplicate keys. Maybe include an option
+			! for first vs last dupe key to take precedence. Apparently the JSON
+			! standard vaguely allows duplicates, so this should be the default
 			call move_val(val, obj%vals(idx))
-			! TODO: set obj%idx. duplicate keys are out of order otherwise
-			!obj%idx( obj%nkeys ) = idx  ! not like this. need to shift or sort whole array?
 			obj%nvals = obj%nvals + 1  ! nvals is incremented here but *not* nkeys
 			obj%place(idx) = obj%nvals
 			exit

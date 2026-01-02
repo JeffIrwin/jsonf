@@ -46,7 +46,7 @@ subroutine test_in1(nfail, ntot)
 	json%hashed_order = .true.
 	call json%read_str(str)
 	str_out = json%to_str()
-	print *, "str_out = ", str_out
+	!print *, "str_out = ", str_out
 
 	! TODO: this will break depending on the ordering, e.g. if djb2_hash() is
 	! ever modified
@@ -60,7 +60,7 @@ subroutine test_in1(nfail, ntot)
 
 	json%compact = .true.
 	str_out = json%to_str()
-	print *, "str_out = ", str_out
+	!print *, "str_out = ", str_out
 	expect = '{"c":"my str","a":1,"b":2,}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
@@ -73,7 +73,7 @@ subroutine test_in1(nfail, ntot)
 	json%compact = .true.
 	str = read_file(filename)
 	str_out = json%to_str()
-	print *, "str_out = ", str_out
+	!print *, "str_out = ", str_out
 	expect = '{"a":1,"b":2,"c":"my str",}'
 	TEST(is_str_eq(str_out, expect), "test_in1 3", nfail, ntot)
 
@@ -96,6 +96,46 @@ subroutine test_in3(nfail, ntot)
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 end subroutine test_in3
+
+subroutine test_in4(nfail, ntot)
+	! With duplicate keys, the last value is retained and its order is correct
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect
+	type(json_t) :: json
+
+	filename = "data/in4.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	json%compact = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"a":1,"c":3,"b":9999,}'
+	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+
+end subroutine test_in4
+
+subroutine test_in5(nfail, ntot)
+	! With duplicate keys, the last value is retained and its order is correct
+	!
+	! Similar to in4 but with more source duplicates
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect
+	type(json_t) :: json
+
+	filename = "data/in5.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	json%compact = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"a":1111,"c":3333,"b":9999,}'
+	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+
+end subroutine test_in5
 
 subroutine test_basic_jsons(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
@@ -140,6 +180,8 @@ program test
 	call test_basic_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)
 	call test_in3(nfail, ntot)
+	call test_in4(nfail, ntot)
+	call test_in5(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
