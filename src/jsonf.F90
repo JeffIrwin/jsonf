@@ -596,8 +596,7 @@ recursive function obj_to_str(json, obj) result(str)
 
 	! TODO: add up an incrementor and compare to nkeys to decide when to omit last trailing comma
 
-	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx%vec(1: obj%idx%len)
-	write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
+	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
 
 	sb = new_str_builder()
 	call sb%push("{")
@@ -688,7 +687,7 @@ subroutine parse_obj(lexer, obj)
 	type(val_t) :: val
 	integer, parameter :: INIT_SIZE = 2
 
-	if (DEBUG > -1) print *, "Starting parse_obj()"
+	if (DEBUG > 0) print *, "Starting parse_obj()"
 
 	if (DEBUG > 0) print *, "matching LBRACE_TOKEN"
 	call lexer%match(LBRACE_TOKEN)
@@ -736,7 +735,7 @@ subroutine parse_obj(lexer, obj)
 		end select
 	end do
 
-	if (DEBUG > -1) then
+	if (DEBUG > 0) then
 		write(*,*) "Finished parse_obj(), nkeys = "//to_str(obj%nkeys)
 	end if
 
@@ -812,9 +811,8 @@ subroutine set_map_core(obj, key, val)
 			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
 			call move_val(val, obj%vals(idx))
 			obj%nkeys = obj%nkeys + 1
-			!call obj%idx%push(idx)
 			obj%idx( obj%nkeys ) = idx
-			print *, "pushing idx ", idx
+			!print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
