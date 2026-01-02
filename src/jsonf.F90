@@ -5,30 +5,30 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - test object top-level json
-	! - test primitive top-level json, e.g. just an int, str, etc. not in an
-	!   object or array
-	! - test stream parsing
-	!   * lex 1 (or a couple lookahead) token(s) at a time
-	!   * beware the peek(-1) token (i.e. previous) in float lexer
-	!   * read 1 char from file at a time
+	! - add bools, floats, and null
+	!   * ints with + or - signs
+	!   * floats with lower- and upper-case e/E exponents
+	!   * optionally allow d/D exponents a la Fortran. default?
+	! - add other stream types
+	!   * stdin
+	!   * network? probably not
 	! - ci/cd
-	!   * docker
-	!   * github actions
 	!   * test on windows, linux (macos?)
 	!   * test with different fortran compilers
-	!   * fpm and cmake
-	!   * release and debug profiles/configurations
+	!   * cmake
 	! - test array top-level json
 	!   * get file/token streaming down before starting array work
 	! - test heterogeneous arrays
-	! - test `null` literal
-	! - test nested objects/arrays
-	!   * test nested objs where inner obj has same keys as outer obj
+	! - unit tests must cover bad syntax -- it's important that they don't go
+	!   into an infinite loop on anything like unterminated strs (i just did
+	!   this :facepalm:)
+	!   * invalid tokens
+	!   * unterminated strings
+	!   * invalid numbers, e.g. bad floats that look almost like a float
+	! - test nested arrays
 	! - check json-fortran, jq, and other similar projects for features to add
 	! - test re-entry with re-using one object to load multiple JSON inputs in
 	!   sequence. might find bugs with things that need to be deallocated first
-	! - test error handling: invalid tokens, unterminated strings, invalid numbers
 	! - prune unused code copied from other template projects (blarg etc.)
 	! - test large files
 	! - test unicode in strings
@@ -37,7 +37,6 @@ module jsonf
 	! - test escape sequences in strings
 	! - test comments -- nonstandard but use "#" or another char if requested by some option
 	! - test diagnostics reporting line/column numbers
-	! - test pretty-printing output option
 
 	integer, parameter :: DEBUG = 0
 

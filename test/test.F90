@@ -80,6 +80,9 @@ subroutine test_in1(nfail, ntot)
 end subroutine test_in1
 
 subroutine test_in3(nfail, ntot)
+	! Nested objects.  Inner objects have some of the same keys as the outer
+	! objects, although these are of course not duplicate keys because they
+	! exist at different levels
 	integer, intent(inout) :: nfail, ntot
 	!********
 	character(len=:), allocatable :: filename, str_out, expect
