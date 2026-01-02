@@ -7,7 +7,7 @@ module args_m
 
 		! TODO: stdin option with `-` arg
 		logical :: &
-			assert       = .false., &  ! assert stop on error?
+			!assert       = .false., &  ! assert stop on error?
 			help         = .false., &
 			has_str      = .false., &
 			has_filename = .false.
@@ -52,36 +52,28 @@ function parse_args() result(args)
 	character(len=:), allocatable :: arg
 	integer :: i, nargs, ipos
 	logical :: error = .false.
-	type(str_vec_t) :: argv
 
 	! Set defaults, if any
 	! [none]
 
-	! Get the cmd args as a vector of strings
-	nargs = command_argument_count()
-	argv = new_str_vec()
-	do i = 1, nargs
-		call argv%push(get_arg(i))
-	end do
-	!call print_str_vec("argv = ", argv)
-
 	! Parse the args
 	i = 0
 	ipos = 0
+	nargs = command_argument_count()
 	do while (i < nargs)
 		i = i + 1
-		arg = argv%vec(i)%str
+		arg = get_arg(i)
 		!print *, "arg = ", arg
 
 		select case (arg)
 		case ("-h", "-help", "--help")
 			args%help = .true.
 
-		case ("-a", "--assert")
-			! TODO: do something with this. json-fortran has a "stop-on-error"
-			! option which I would like to implement, default false and return
-			! error codes but continue
-			args%assert = .true.
+		!case ("-a", "--assert")
+		!	! TODO: do something with this. json-fortran has a "stop-on-error"
+		!	! option which I would like to implement, default false and return
+		!	! error codes but continue. Maybe rename the arg
+		!	args%assert = .true.
 
 		case ("-s", "--str", "--string")
 			! Beware, fpm removes quotes from *inside* of cmd args, e.g.
@@ -96,11 +88,11 @@ function parse_args() result(args)
 			! Another option is to escape the quotes in the fpm arg, but this is
 			! inconsistent with escape rules outside of fpm:
 			!
-			!     fpm run -- '{\"a\": 69, \"b\": 420}'
+			!     fpm run -- -s '{\"a\": 69, \"b\": 420}'
 			!
 			i = i + 1
 			args%has_str = .true.
-			args%str = argv%vec(i)%str
+			args%str = get_arg(i)
 			print *, "input string = ", args%str
 
 		case default
@@ -115,14 +107,10 @@ function parse_args() result(args)
 				write(*,*) ERROR_STR//'bad command argument "'//arg//'"'
 			end select
 
-			!! run.sh passes args to make as well as this program. don't
-			!! error-out because we can't understand make's args
-			!write(*,*) WARN_STR//'bad command argument "'//arg//'"'
-
 		end select
 
 	end do
-	! TODO: error if filename *and* string are both given
+	! TODO: error if filename .eqv. string are given
 
 	!********
 
@@ -132,13 +120,13 @@ function parse_args() result(args)
 		write(*,*) "    jsonf -h | --help"
 		write(*,*) "    jsonf FILE.json"
 		write(*,*) "    jsonf (-s | --string) STRING"
-		write(*,*) "    jsonf -a | --assert"
+		!write(*,*) "    jsonf -a | --assert"
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
 		write(*,*) "    --help        Show this help"
 		write(*,*) "    FILE.json     Input JSON filename"
 		write(*,*) "    --string      Input JSON string"
-		write(*,*) "    --assert      Abort if results do not match expected answers"
+		!write(*,*) "    --assert      Abort if results do not match expected answers"
 		write(*,*)
 
 		if (error) call panic("")

@@ -242,6 +242,8 @@ function lex(lexer) result(token)
 		return
 	end if
 
+	! TODO: don't allow underscores as thousands separators by default, but
+	! optionally allow any custom separator
 	if (is_digit_under(lexer%current())) then
 		! Numeric decimal integer or float
 

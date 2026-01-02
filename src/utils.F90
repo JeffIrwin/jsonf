@@ -7,7 +7,7 @@ module utils_m
 	double precision, parameter :: PI = 4.d0 * atan(1.d0)
 
 	integer, parameter :: &
-		EXIT_FAILURE = -1, &
+		EXIT_FAILURE = 1, &
 		EXIT_SUCCESS = 0
 
 	character, parameter :: &
@@ -43,8 +43,8 @@ module utils_m
 	!********
 
 	interface to_str
-		procedure :: to_str_i32
-		procedure :: to_str_i64
+		procedure :: i32_to_str
+		procedure :: i64_to_str
 	end interface to_str
 
 	!********
@@ -82,27 +82,19 @@ contains
 !===============================================================================
 
 function new_str_builder() result(sb)
-
 	type(str_builder_t) :: sb
-
 	sb%len = 0
 	sb%cap = 16
-
 	allocate(character(len = sb%cap) :: sb%str)
-
 end function new_str_builder
 
 !===============================================================================
 
 function new_str_vec() result(vec)
-
 	type(str_vec_t) :: vec
-
 	vec%len = 0
 	vec%cap = 2
-
 	allocate(vec%vec( vec%cap ))
-
 end function new_str_vec
 
 !===============================================================================
@@ -125,12 +117,9 @@ end subroutine print_str_vec
 !===============================================================================
 
 function trim_str_builder(sb) result(str)
-
 	class(str_builder_t), intent(in) :: sb
 	character(len = :), allocatable :: str
-
 	str = sb%str(1: sb%len)
-
 end function trim_str_builder
 
 !===============================================================================
@@ -235,11 +224,11 @@ end function read_mat_char
 
 !===============================================================================
 
-function read_file(file, iostat) result(str_)
-	! Read all lines of a file into str_
+function read_file(file, iostat) result(str)
+	! Read all lines of a file into str
 	character(len = *), intent(in) :: file
 	integer, optional, intent(out) :: iostat
-	character(len = :), allocatable :: str_
+	character(len = :), allocatable :: str
 	!********
 	character :: c
 	integer :: io, iu
@@ -262,7 +251,7 @@ function read_file(file, iostat) result(str_)
 	end do
 	if (io == IOSTAT_END) io = EXIT_SUCCESS
 	close(iu)
-	str_ = sb%trim()
+	str = sb%trim()
 
 	!print *, "io = ", io
 	!print *, 'str = '
@@ -374,35 +363,35 @@ subroutine unit_test_split()
 end subroutine unit_test_split
 !===============================================================================
 
-function to_str_i32(int_) result(str)
+function i32_to_str(int_) result(str)
 	integer(kind = 4), intent(in) :: int_
 	character(len = :), allocatable :: str
 	character :: buffer*16
 	write(buffer, "(i0)") int_
 	str = trim(buffer)
-end function to_str_i32
+end function i32_to_str
 
 !===============================================================================
 
-function to_str_i64(int_) result(str)
+function i64_to_str(int_) result(str)
 	integer(kind = 8), intent(in) :: int_
 	character(len = :), allocatable :: str
 	character :: buffer*16
 	write(buffer, "(i0)") int_
 	str = trim(buffer)
-end function to_str_i64
+end function i64_to_str
 
 !===============================================================================
 
-integer function count_str_match(str_, char_) result(n)
-	! Count the number `n` of characters `char_` in string `str_`
-	character(len = *), intent(in) :: str_
+integer function count_str_match(str, char_) result(n)
+	! Count the number `n` of characters `char_` in string `str`
+	character(len = *), intent(in) :: str
 	character, intent(in) :: char_
 	!********
 	integer :: i
 	n = 0
-	do i = 1, len(str_)
-		if (str_(i:i) == char_) n = n + 1
+	do i = 1, len(str)
+		if (str(i:i) == char_) n = n + 1
 	end do
 end function count_str_match
 
@@ -629,7 +618,6 @@ function read_i32_delims(str, delims) result(v)
 	n = strs%len
 	allocate(v(n))
 	do i = 1, n
-		!read(strs%vec(i)%str, *) v(i)
 		v(i) = read_i32(strs%vec(i)%str)
 	end do
 
