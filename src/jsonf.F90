@@ -67,9 +67,9 @@ module jsonf
 		type(sca_t) :: sca
 
 		! TODO: should maps also have an ordering index array, to preserve insertion order?  Not part of json standard but very helpful for consistent str/print output
-		integer(kind=8) :: nkey = 0
-		type(str_t), allocatable :: key(:)  ! TODO: rename to keys/vals? Singular seems confusing
-		type(val_t), allocatable :: val(:)
+		integer(kind=8) :: nkeys = 0
+		type(str_t), allocatable :: keys(:)
+		type(val_t), allocatable :: vals(:)
 
 		!type(arr_t) :: arr  ! TODO: arrays
 	end type val_t
@@ -503,21 +503,21 @@ subroutine lexer_match(lexer, kind)
 end subroutine lexer_match
 
 ! Do these need to be declared recursive? I remember certain fortran compilers being picky about it, even though it's only inderictly recursive.  Same with obj_to_str()
-recursive function val_to_str(json, this) result(str)
+recursive function val_to_str(json, val) result(str)
 	type(json_t), intent(inout) :: json
-	type(val_t), intent(in) :: this
+	type(val_t), intent(in) :: val
 	character(len = :), allocatable :: str
 	!********
 	! Don't need a str_builder here since val_t is a single value
-	select case (this%type)
+	select case (val%type)
 	case (STR_TYPE)
-		str = quote(this%sca%str)
+		str = quote(val%sca%str)
 	case (I64_TYPE)
-		str = to_str(this%sca%i64)
+		str = to_str(val%sca%i64)
 	case (OBJ_TYPE)
-		str = obj_to_str(json, this)
+		str = obj_to_str(json, val)
 	case default
-		call panic("val_to_str: unknown type "//kind_name(this%type))
+		call panic("val_to_str: unknown type "//kind_name(val%type))
 	end select
 end function val_to_str
 
@@ -567,10 +567,9 @@ function json_to_str(this) result(str)
 	str = val_to_str(this, this%root)
 end function json_to_str
 	
-recursive function obj_to_str(json, this) result(str)
-	! TODO: rename `json` and `this` here and in related fns. This should just be val since it's not a class now
+recursive function obj_to_str(json, val) result(str)
 	type(json_t), intent(inout) :: json
-	type(val_t), intent(in) :: this
+	type(val_t), intent(in) :: val
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: key_str, val_str, indent
@@ -580,22 +579,22 @@ recursive function obj_to_str(json, this) result(str)
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
 
-	! TODO: add up an incrementor and compare to nkey to decide when to omit last trailing comma
+	! TODO: add up an incrementor and compare to nkeys to decide when to omit last trailing comma
 
 	sb = new_str_builder()
 	call sb%push("{"//LINE_FEED)
 	json%indent_level = json%indent_level + 1
 	indent = repeat(json%indent, json%indent_level)
-	do i = 1, size(this%key)
-		if (allocated(this%key(i)%str)) then
-			!write(ERROR_UNIT, *) "key = "//quote(this%key(i)%str)
+	do i = 1, size(val%keys)
+		if (allocated(val%keys(i)%str)) then
+			!write(ERROR_UNIT, *) "key = "//quote(val%keys(i)%str)
 
-			key_str = quote(this%key(i)%str)  ! TODO: quote escaping
-			val_str = val_to_str(json, this%val(i))
+			key_str = quote(val%keys(i)%str)  ! TODO: quote escaping
+			val_str = val_to_str(json, val%vals(i))
 			call sb%push(indent//key_str//": "//val_str)
 
 			!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
-			!call sb%push(indent//quote(this%key(i)%str)//": "//val_to_str(json, this%val(i)))
+			!call sb%push(indent//quote(val%keys(i)%str)//": "//val_to_str(json, val%vals(i)))
 
 			call sb%push(","//LINE_FEED)
 		end if
@@ -644,9 +643,9 @@ subroutine parse_obj(lexer, json)
 	json%type = OBJ_TYPE
 
 	! Initialize hash map storage
-	allocate(json%key(2))
-	allocate(json%val(2))
-	json%nkey = 0
+	allocate(json%keys(2))
+	allocate(json%vals(2))
+	json%nkeys = 0
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -681,7 +680,7 @@ subroutine parse_obj(lexer, json)
 	end do
 
 	if (DEBUG > 0) then
-		write(*,*) "Finished parse_obj(), nkey = "//to_str(json%nkey)
+		write(*,*) "Finished parse_obj(), nkeys = "//to_str(json%nkeys)
 	end if
 
 end subroutine parse_obj
@@ -695,15 +694,15 @@ subroutine set_map(json, key, val)
 	type(str_t), allocatable :: old_keys(:)
 	type(val_t), allocatable :: old_vals(:)
 
-	n0 = size(json%key)
-	if (json%nkey * 2 >= n0) then
+	n0 = size(json%keys)
+	if (json%nkeys * 2 >= n0) then
 		! Resize the entries array if load factor exceeds 0.5
 		n = n0 * 2
-		call move_alloc(json%key, old_keys)
-		call move_alloc(json%val, old_vals)
-		allocate(json%key(n))
-		allocate(json%val(n))
-		json%nkey = 0
+		call move_alloc(json%keys, old_keys)
+		call move_alloc(json%vals, old_vals)
+		allocate(json%keys(n))
+		allocate(json%vals(n))
+		json%nkeys = 0
 		do i = 1, n0
 			if (allocated(old_keys(i)%str)) then
 				call set_map_core(json, old_keys(i)%str, old_vals(i))
@@ -726,7 +725,7 @@ subroutine set_map_core(json, key, val)
 	!print *, "set_map_core: key = "//quote(key)
 
 	hash = djb2_hash(key)
-	n = size(json%key)
+	n = size(json%keys)
 	!print *, "n = ", n
 	!print *, "hash = ", hash
 
@@ -734,18 +733,18 @@ subroutine set_map_core(json, key, val)
 	! overflow become negative for long strs
 	idx = modulo(hash, n) + 1
 	do
-		if (.not. allocated(json%key(idx)%str)) then
+		if (.not. allocated(json%keys(idx)%str)) then
 			! Empty slot found, insert new entry
-			json%key(idx)%str = key
-			if (DEBUG > 0) print *, "key = "//quote(json%key(idx)%str)
-			call move_val(val, json%val(idx))
-			json%nkey = json%nkey + 1
+			json%keys(idx)%str = key
+			if (DEBUG > 0) print *, "key = "//quote(json%keys(idx)%str)
+			call move_val(val, json%vals(idx))
+			json%nkeys = json%nkeys + 1
 			exit
-		else if (is_str_eq(json%key(idx)%str, key)) then
+		else if (is_str_eq(json%keys(idx)%str, key)) then
 			! Key already exists, update value
 			!
 			! TODO: ban duplicate keys by default, option to allow
-			json%val(idx) = val
+			json%vals(idx) = val
 			exit
 		else
 			! Collision, try next index (linear probing)
@@ -763,9 +762,9 @@ subroutine move_val(src, dst)
 	dst%type = src%type
 	select case (src%type)
 	case (OBJ_TYPE)
-		dst%nkey = src%nkey
-		call move_alloc(src%key, dst%key)
-		call move_alloc(src%val, dst%val)
+		dst%nkeys = src%nkeys
+		call move_alloc(src%keys, dst%keys)
+		call move_alloc(src%vals, dst%vals)
 	case (ARR_TYPE)
 		call panic("array move_val not implemented yet")  ! TODO
 	case default
@@ -802,6 +801,7 @@ subroutine push_token(vec, val)
 end subroutine push_token
 
 module function tokens_to_str(tokens) result(str)
+	! Unused, but potentially helpful for debugging
 	type(token_vec_t) :: tokens
 	character(len = :), allocatable :: str
 	!********
