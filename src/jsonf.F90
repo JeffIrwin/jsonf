@@ -114,19 +114,15 @@ module jsonf
 		type(stream_t)  :: stream
 
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
-		character :: current_char, previous_char
+		character     :: current_char , previous_char
 		type(token_t) :: current_token, previous_token
-		logical :: &
-			has_current_char   = .false., &
-			has_current_token  = .false., &
-			has_previous_token = .false.
 
 		contains
 			procedure :: &
 				lex, &
 				match => lexer_match, &
-				next_char => lexer_next_char, &
-				next => lexer_next, &  ! TODO: rename next_token
+				next_char  => lexer_next_char, &
+				next_token => lexer_next_token, &
 				current => lexer_current, &
 				current_kind => lexer_current_kind
 	end type lexer_t
@@ -161,10 +157,6 @@ character function lexer_current(lexer)
 
 	! TODO: can we just do this once instead of checking a bool every time?
 	! Same for token in lexer_current_kind()
-	if (.not. lexer%has_current_char) then
-		lexer%current_char = lexer%stream%get()
-		lexer%has_current_char = .true.
-	end if
 	lexer_current = lexer%current_char
 
 end function lexer_current
@@ -176,30 +168,22 @@ subroutine lexer_next_char(lexer)
 	lexer%current_char =  lexer%stream%get()
 end subroutine lexer_next_char
 
-subroutine lexer_next(lexer)
+subroutine lexer_next_token(lexer)
 	! Advance to the next non-whitespace token.  Comment skipping could also be
 	! added here
 	class(lexer_t), intent(inout) :: lexer
 	!********
 	lexer%previous_token = lexer%current_token
-	lexer%current_token = lexer%lex()
+	lexer%current_token  = lexer%lex()
 	do while (lexer%current_token%kind == WHITESPACE_TOKEN)
 		lexer%current_token = lexer%lex()
 		if (lexer%current_token%kind == EOF_TOKEN) exit
 	end do
-end subroutine lexer_next
+end subroutine lexer_next_token
 
 integer function lexer_current_kind(lexer)
 	class(lexer_t) :: lexer
-
-	if (lexer%has_current_token) then
-		lexer%current_token = lexer%current_token
-	else
-		lexer%current_token = lexer%lex()
-		lexer%has_current_token = .true.
-	end if
 	lexer_current_kind = lexer%current_token%kind
-
 end function lexer_current_kind
 
 function new_literal(type, bool, i64, f64, str) result(lit)
@@ -391,9 +375,15 @@ function new_lexer(stream) result(lexer)
 	type(stream_t) :: stream
 	type(lexer_t) :: lexer
 	!********
-	lexer%pos  = 1
+	lexer%pos = 1
 	lexer%diagnostics = new_str_vec()
 	lexer%stream = stream
+
+	! Get the first char and token on construction instead of checking later if
+	! we have them
+	lexer%current_char = lexer%stream%get()
+	lexer%current_token = lexer%lex()
+
 end function new_lexer
 
 subroutine read_file_json(json, filename)
@@ -418,10 +408,14 @@ subroutine read_str_json(json, str)
 	character(len=*), intent(in) :: str
 	!********
 	type(stream_t) :: stream
+
+	! We have the whole str, but treat it as a stream for consistency with file
+	! streaming
 	stream%type = STR_STREAM
 	stream%str = str
 	stream%pos = 1
 	call json%parse(stream)
+
 end subroutine read_str_json
 
 character function get_stream_char(stream) result(c)
@@ -497,7 +491,7 @@ subroutine lexer_match(lexer, kind)
 	integer, intent(in) :: kind
 	!********
 	if (lexer%current_kind() == kind) then
-		call lexer%next()
+		call lexer%next_token()
 		return
 	end if
 
@@ -621,11 +615,11 @@ subroutine parse_val(lexer, json)
 		!print *, "value (string) = ", lexer%current_token%sca%str
 		json%type = STR_TYPE
 		json%sca = lexer%current_token%sca
-		call lexer%next()
+		call lexer%next_token()
 	case (I64_TOKEN)
 		json%type = I64_TYPE
 		json%sca = lexer%current_token%sca
-		call lexer%next()
+		call lexer%next_token()
 	case (LBRACE_TOKEN)
 		call parse_obj(lexer, json)
 	case (LBRACKET_TOKEN)
@@ -657,7 +651,7 @@ subroutine parse_obj(lexer, json)
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
 			! End of object
-			call lexer%next()
+			call lexer%next_token()
 			exit
 		end if
 
@@ -676,10 +670,10 @@ subroutine parse_obj(lexer, json)
 		select case (lexer%current_kind())
 		case (COMMA_TOKEN)
 			! TODO: test trailing commas. Make them an error by default but provide option to allow
-			call lexer%next()
+			call lexer%next_token()
 		case (RBRACE_TOKEN)
 			! TODO: do we really need exit condition at top and bottom of loop? Make sure we handle empty objects
-			call lexer%next()
+			call lexer%next_token()
 			exit
 		case default
 			call panic("expected ',' or '}' after key-value pair in object")
