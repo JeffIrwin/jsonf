@@ -1,0 +1,27 @@
+{
+	"comment": "the top \"b\" key is duplicate",
+	"a": 1,
+	"b":
+	{
+		"a": 11,
+		"b":
+		{
+			"a": 111,
+			"b": "here's a \"string\"",
+			"c": 333
+		},
+		"c": 33
+	},
+	"b":
+	{
+		"a": 55,
+		"b":
+		{
+			"a": 555,
+			"b": "here's a \"string\"",
+			"c": 666
+		},
+		"c": 66
+	},
+	"c": 3
+}

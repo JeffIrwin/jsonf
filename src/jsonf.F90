@@ -747,8 +747,9 @@ subroutine set_map_core(json, key, val)
 		else if (is_str_eq(json%keys(idx)%str, key)) then
 			! Key already exists, update value
 			!
-			! TODO: ban duplicate keys by default, option to allow
-			json%vals(idx) = val
+			! TODO: ban duplicate keys by default, option to allow. Maybe
+			! include an option for first vs last dupe key to take precedence
+			call move_val(val, json%vals(idx))
 			exit
 		else
 			! Collision, try next index (linear probing)
@@ -777,6 +778,9 @@ subroutine move_val(src, dst)
 
 end subroutine move_val
 
+! TODO: token_vec is never used since token streaming was implemented. Delete
+! these, but add a stream_tokens_to_str() fn in test, as a basic test, and for
+! developing new stream types (e.g. stdin, network (?))
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
 	!********

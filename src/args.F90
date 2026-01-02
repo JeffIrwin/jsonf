@@ -84,15 +84,19 @@ function parse_args() result(args)
 			args%assert = .true.
 
 		case ("-s", "--str", "--string")
-			! TODO: fpm removes quotes from *inside* of cmd args, e.g.
+			! Beware, fpm removes quotes from *inside* of cmd args, e.g.
 			!
 			!     '{"a": 69, "x": 420}'  ->  {a: 69, x: 420}
 			!
-			! Not sure if there's a good reason for it or if it's actually a
-			! bug.  Of course you can install the exe directly and run it
-			! outside of fpm and then there's no problem:
+			! Of course you can install the exe directly and run it outside of
+			! fpm and then there's no problem:
 			!
 			!     fpm install --prefix . && ./bin/jsonf -s '{"a123": 69, "x456": 420}'
+			!
+			! Another option is to escape the quotes in the fpm arg, but this is
+			! inconsistent with escape rules outside of fpm:
+			!
+			!     fpm run -- '{\"a\": 69, \"b\": 420}'
 			!
 			i = i + 1
 			args%has_str = .true.
