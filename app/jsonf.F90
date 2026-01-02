@@ -8,26 +8,39 @@ module jsonf__app
 
 contains
 
-subroutine app_read_file(filename)
+subroutine app_echo_file(filename)
 	character(len=*), intent(in) :: filename
 	character(len=:), allocatable :: str
-	!type(parser_t) :: parser
 	type(json_t) :: json
+	character(len=:), allocatable :: out_str
 
 	write(*,*) "Reading JSON from file: "//quote(filename)
 	call json%read_file(filename)
 
-end subroutine app_read_file
+	!! TODO
+	!call json%print("JSON content from file:")
+	out_str = json%to_str()
+	write(*,*) "JSON content from file:"//LINE_FEED//out_str
 
-subroutine app_read_str(str)
+end subroutine app_echo_file
+
+subroutine app_echo_str(str)
 	character(len=*), intent(in) :: str
-	!type(parser_t) :: parser
 	type(json_t) :: json
+	character(len=:), allocatable :: out_str
 
 	write(*,*) "Reading JSON from string:"//LINE_FEED//"<<<"//str//">>>"
 	call json%read_str(str)
 
-end subroutine app_read_str
+	!! TODO
+	call json%print("JSON content from string:")
+	!out_str = json%to_str()
+	!write(*, '(a)') "JSON content from string:"
+	!write(*, "(a)") " "//out_str
+	!print *, out_str
+	call json%write("junk.json")
+
+end subroutine app_echo_str
 
 end module jsonf__app
 
@@ -44,10 +57,10 @@ program test
 
 	if (args%has_filename) then
 		!write(*,*) "Reading JSON from file: "//args%filename
-		call app_read_file(args%filename)
+		call app_echo_file(args%filename)
 	else if (args%has_str) then
 		!write(*,*) "Reading JSON from string: "//LINE_FEED//args%str
-		call app_read_str(args%str)
+		call app_echo_str(args%str)
 	else
 		! TODO: move this error to args. Log help msg
 		call panic("no input JSON filename or string given")

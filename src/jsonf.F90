@@ -37,7 +37,7 @@ module jsonf
 	! - test diagnostics reporting line/column numbers
 	! - test pretty-printing output option
 
-	integer, parameter :: DEBUG = 1
+	integer, parameter :: DEBUG = 0
 
 	type sca_t
 		! Scalar value type -- primitive bool, int, float, str, or null, but
@@ -62,7 +62,8 @@ module jsonf
 
 		contains
 			procedure :: &
-				to_str => val_to_str
+				to_str => val_to_str, &
+				print  => print_val
 	end type val_t
 
 	type json_t
@@ -71,7 +72,9 @@ module jsonf
 
 		contains
 			procedure :: &
-				!to_str    => to_str_json, &
+				write     => write_json, &
+				print     => print_json, &
+				to_str    => json_to_str, &
 				read_file => read_file_json, &
 				read_str  => read_str_json, &
 				parse     => parse_json
@@ -468,10 +471,10 @@ subroutine parse_root(lexer, json)
 	type(val_t), intent(out) :: json
 	!********
 	integer :: kind
-	print *, "Starting parse_root()"
+	if (DEBUG > 0) print *, "Starting parse_root()"
 	do
 		kind = lexer%current_kind()
-		print *, "tok kind = ", kind_name(kind)
+		if (DEBUG > 0) print *, "tok kind = ", kind_name(kind)
 
 		select case (kind)
 		case (EOF_TOKEN)
@@ -504,46 +507,149 @@ subroutine match(lexer, kind)
 
 end subroutine match
 
-function val_to_str(this) result(str_)
+! Do these need to be declared recursive? I remember certain fortran compilers being picky about it, even though it's only inderictly recursive.  Same with obj_to_str()
+recursive function val_to_str(this) result(str)
 	class(val_t) :: this
-	character(len = :), allocatable :: str_
+	character(len = :), allocatable :: str
 	!********
 	type(str_builder_t) :: sb
-	sb = new_str_builder()
+	!sb = new_str_builder()
 	select case (this%type)
 	case (STR_TYPE)
-		call sb%push("str: <"//this%sca%str//">")
+		! TODO: escape special chars (e.g. quotes) in string
+		str = '"'//this%sca%str//'"'
+		!call sb%push('"'//this%sca%str//'"')
+		!call sb%push("str: <"//this%sca%str//">")
 	case (I64_TYPE)
-		call sb%push("i64: "//to_str(this%sca%i64))
+		str = to_str(this%sca%i64)
+		!call sb%push(to_str(this%sca%i64))
 	case (OBJ_TYPE)
-		call sb%push("object: "//obj_to_str(this))
+		str = obj_to_str(this)
+		!call sb%push(obj_to_str(this))
 	case default
 		call panic("val_to_str: unknown type "//kind_name(this%type))
 	end select
-	str_ = sb%trim()
+	!str = sb%trim()
 end function val_to_str
 
-function obj_to_str(this) result(str_)
+subroutine print_val(this)
 	class(val_t) :: this
-	character(len = :), allocatable :: str_
 	!********
-	type(str_builder_t) :: sb
-	integer(kind=8) :: i
-	logical :: first
+	select case (this%type)
+	case (STR_TYPE)
+		write(*, "(a)") '"'//this%sca%str//'"'
+	case (I64_TYPE)
+		write(*, "(a)") to_str(this%sca%i64)
+	case (OBJ_TYPE)
+		!write(*, "(a)") obj_to_str(this)
+		call print_obj(this)
+	case default
+		call panic("print_val: unknown type "//kind_name(this%type))
+	end select
 
-	sb = new_str_builder()
-	call sb%push("{")
-	first = .true.
+end subroutine print_val
+
+subroutine write_json(this, filename, unit_)
+	class(json_t) :: this
+	character(len=*), intent(in), optional :: filename
+	integer, intent(in), optional :: unit_
+	!********
+	integer :: unit__
+	if (present(unit_)) then
+		unit__ = unit_
+	else if (present(filename)) then
+		!open(newunit = unit__, file = filename, action = "write", status = "replace")
+		open(newunit = unit__, file = filename, action = "write")
+	else
+		unit__ = OUTPUT_UNIT
+	end if
+	write(unit__, "(a)") this%root%to_str()
+
+	if (present(filename)) then
+		print *, "Closing unit "//to_str(unit__)
+		close(unit__)
+	end if
+
+end subroutine write_json
+
+subroutine print_json(this, msg)
+	class(json_t) :: this
+	character(len=*), intent(in), optional :: msg
+	!********
+	if (present(msg)) then
+		write(*, "(a)") msg
+	end if
+	!print *, this%root%to_str()
+
+	!! TODO
+	!call write_json(this)
+	call this%root%print()
+
+end subroutine print_json
+
+function json_to_str(this) result(str)
+	class(json_t) :: this
+	character(len = :), allocatable :: str
+	!********
+	str = this%root%to_str()
+end function json_to_str
+
+recursive function obj_to_str(this) result(str)
+	class(val_t) :: this
+	character(len = :), allocatable :: str
+	!********
+	character(len=:), allocatable :: key_str, val_str
+	integer(kind=8) :: i
+	!logical :: first
+	type(str_builder_t) :: sb
+
+	!print *, "starting obj_to_str()"
+	!write(ERROR_UNIT, *) "starting obj_to_str()"
+
+	!sb = new_str_builder()
+	!call sb%push("{")
+	str = "{"
+	!first = .true.
 	do i = 1, size(this%key)
 		if (allocated(this%key(i)%str)) then
-			if (.not. first) call sb%push(", ")
-			first = .false.
-			call sb%push(quote(this%key(i)%str)//": "//this%val(i)%to_str())
+			!if (.not. first) call sb%push(",")
+			!first = .false.
+
+			!print *, "key = "//quote(this%key(i)%str)
+			write(ERROR_UNIT, *) "key = "//quote(this%key(i)%str)
+
+			!str = str//quote(this%key(i)%str)//": "//this%val(i)%to_str()//", "
+			!key_str = quote(this%key(i)%str)
+			key_str = '"'//this%key(i)%str//'"'
+			val_str = this%val(i)%to_str()
+			str = str // key_str // ": " // val_str // ", "
+
+			!call sb%push(quote(this%key(i)%str)//": "//this%val(i)%to_str())
+			!!call sb%push(","//LINE_FEED)
+			!call sb%push(", ")
 		end if
 	end do
-	call sb%push("}")
-	str_ = sb%trim()
+	str = str // "}"
+	!call sb%push("}")
+	!str = sb%trim()
 end function obj_to_str
+
+subroutine print_obj(this)
+	class(val_t) :: this
+	!********
+	integer(kind=8) :: i
+
+	write(*,*) "{"
+	do i = 1, size(this%key)
+		if (allocated(this%key(i)%str)) then
+			!write(*,*) "  key = "//quote(this%key(i)%str)// ", val = "
+			print *, this%key(i)%str//":"
+			call this%val(i)%print()
+		end if
+	end do
+	write(*,*) "}"
+
+end subroutine print_obj
 
 subroutine parse_val(lexer, json)
 	type(lexer_t), intent(inout) :: lexer
@@ -576,10 +682,10 @@ subroutine parse_obj(lexer, json)
 	character(len=:), allocatable :: key
 	type(val_t) :: val
 
-	print *, "Starting parse_obj()"
+	if (DEBUG > 0) print *, "Starting parse_obj()"
 
 	! TODO: make `match()` a lexer class method
-	print *, "matching LBRACE_TOKEN"
+	if (DEBUG > 0) print *, "matching LBRACE_TOKEN"
 	call match(lexer, LBRACE_TOKEN)
 	json%type = OBJ_TYPE
 
@@ -633,10 +739,10 @@ subroutine print_map(prefix, json)
 	!********
 	integer(kind=8) :: i
 
-	print *, prefix
+	write(*,*) prefix
 	do i = 1, size(json%key)
 		if (allocated(json%key(i)%str)) then
-			print *, &
+			write(*,*) &
 				"  key = "//quote(json%key(i)%str)// &
 				", val = "//json%val(i)%to_str()
 		end if
@@ -685,11 +791,16 @@ subroutine set_map_core(json, key, val)
 
 	hash = djb2_hash(key)
 	n = size(json%key)
-	idx = mod(hash, n) + 1
+	!print *, "n = ", n
+	!print *, "hash = ", hash
+
+	! TODO: my other map implementations need modulo instead of mod
+	idx = modulo(hash, n) + 1
 	do
 		if (.not. allocated(json%key(idx)%str)) then
 			! Empty slot found, insert new entry
 			json%key(idx)%str = key
+			if (DEBUG > 0) print *, "key = "//quote(json%key(idx)%str)
 			call move_val(val, json%val(idx))
 			json%nkey = json%nkey + 1
 			exit
