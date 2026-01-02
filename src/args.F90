@@ -5,10 +5,13 @@ module args_m
 
 	type args_t
 
-		! TODO: stdin option with `-` arg
+		! TODO:
+		! - stdin option with `-` arg
+		! - hashed_order option
 		logical :: &
-			!assert       = .false., &  ! assert stop on error?
 			help         = .false., &
+			!assert       = .false., &  ! assert stop on error?
+			compact      = .false., &
 			has_str      = .false., &
 			has_filename = .false.
 
@@ -69,6 +72,9 @@ function parse_args() result(args)
 		case ("-h", "-help", "--help")
 			args%help = .true.
 
+		case ("-c", "--compact")
+			args%compact = .true.
+
 		!case ("-a", "--assert")
 		!	! TODO: do something with this. json-fortran has a "stop-on-error"
 		!	! option which I would like to implement, default false and return
@@ -121,11 +127,13 @@ function parse_args() result(args)
 		write(*,*) "    jsonf FILE.json"
 		write(*,*) "    jsonf (-s | --string) STRING"
 		!write(*,*) "    jsonf -a | --assert"
+		write(*,*) "    jsonf -c | --compact"
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
 		write(*,*) "    --help        Show this help"
 		write(*,*) "    FILE.json     Input JSON filename"
 		write(*,*) "    --string      Input JSON string"
+		write(*,*) "    --compact     Format compactly without whitespace"
 		!write(*,*) "    --assert      Abort if results do not match expected answers"
 		write(*,*)
 

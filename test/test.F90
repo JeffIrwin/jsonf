@@ -29,7 +29,6 @@ subroutine test_(val, msg, nfail, ntot, file, line)
 	end if
 end subroutine test_
 
-
 subroutine test_in1(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
@@ -38,6 +37,9 @@ subroutine test_in1(nfail, ntot)
 
 	filename = "data/in1.json"
 	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	! TODO: just use json%read_file() instead of manually loading whole str,
+	! like in3 below
 
 	str = read_file(filename)
 	!print *, "str = "//LINE_FEED//str
@@ -76,6 +78,24 @@ subroutine test_in1(nfail, ntot)
 	TEST(is_str_eq(str_out, expect), "test_in1 3", nfail, ntot)
 
 end subroutine test_in1
+
+subroutine test_in3(nfail, ntot)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect
+	type(json_t) :: json
+
+	filename = "data/in3.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	json%compact = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"a":1,"b":{"a":11,"b":{"a":111,"b":"here''s a "string"","c":333,},"c":33,"d":44,},"c":3,"d":4,"e":5,}'
+	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+
+end subroutine test_in3
 
 subroutine test_basic_jsons(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
@@ -119,6 +139,7 @@ program test
 
 	call test_basic_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)
+	call test_in3(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
