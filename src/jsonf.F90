@@ -68,15 +68,9 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
-		! TODO: should maps also have an ordering index array, to preserve
-		! insertion order?  Not part of json standard but very helpful for
-		! consistent str/print output
-		!
-		! jq echos with consistent order
 		integer(kind=8) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(val_t), allocatable :: vals(:)
-		!type(i64_vec_t) :: idx  ! for consistent output of object hashmap members
 		integer(kind=8), allocatable :: idx(:)  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
@@ -167,11 +161,7 @@ contains
 character function lexer_current(lexer)
 	! Current char
 	class(lexer_t) :: lexer
-
-	! TODO: can we just do this once instead of checking a bool every time?
-	! Same for token in lexer_current_kind()
 	lexer_current = lexer%current_char
-
 end function lexer_current
 
 subroutine lexer_next_char(lexer)
@@ -501,7 +491,6 @@ subroutine parse_root(lexer, root)
 end subroutine parse_root
 
 subroutine lexer_match(lexer, kind)
-	! TODO: return a token as a fn? Might be useful to have the matched token's position in case of later diagnostics. Or could just use lexer%previous_token in caller
 	class(lexer_t), intent(inout) :: lexer
 	integer, intent(in) :: kind
 	!********
@@ -700,7 +689,6 @@ subroutine parse_obj(lexer, obj)
 
 	! TODO: pass json container to control whether to allocate idx or not based
 	! on hashed_order
-	!obj%idx = new_i64_vec()
 	allocate(obj%idx(INIT_SIZE))
 
 	do
@@ -820,7 +808,8 @@ subroutine set_map_core(obj, key, val)
 			! TODO: ban duplicate keys by default, option to allow. Maybe
 			! include an option for first vs last dupe key to take precedence
 			call move_val(val, obj%vals(idx))
-			! TODO: set obj%idx?
+			! TODO: set obj%idx. duplicate keys are out of order otherwise
+			!obj%idx( obj%nkeys ) = idx  ! not like this. need to shift or sort whole array?
 			exit
 		else
 			! Collision, try next index (linear probing)
