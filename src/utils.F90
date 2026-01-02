@@ -62,8 +62,7 @@ module utils_m
 		integer(kind = 8) :: len, cap
 		contains
 			procedure :: &
-				push_char => push_str_builder_char, &
-				push => push_str_builder_str, &
+				push => push_str_builder, &
 				trim => trim_str_builder
 	end type str_builder_t
 
@@ -136,99 +135,49 @@ end function trim_str_builder
 
 !===============================================================================
 
-subroutine push_str_builder_char(sb, val)
-	! Push a string onto a str builder
+subroutine push_str_builder(sb, val)
+	! Push onto a str builder
 	class(str_builder_t), intent(inout) :: sb
-	character, intent(in) :: val
+	character(len=*), intent(in) :: val
 	!********
 	character(len = :), allocatable :: tmp
 	integer(kind = 8) :: tmp_cap
 
 	!print *, "pushing """//val//""""
 
-	sb%len = sb%len + 1
+	sb%len = sb%len + len(val)
 	if (sb%len > sb%cap) then
-		!print *, 'growing str'
-
-		! Grow the buffer capacity.  What is the optimal growth factor?
-		tmp_cap = 2 * sb%cap
+		! Grow the buffer capacity
+		tmp_cap = 2 * sb%len
 		allocate(character(len = tmp_cap) :: tmp)
-		!tmp(1: sb%cap) = sb%str
-		tmp(1: sb%len-1) = sb%str(1: sb%len-1)
+		tmp(1: sb%cap) = sb%str
 
 		call move_alloc(tmp, sb%str)
 		sb%cap = tmp_cap
 	end if
-	sb%str(sb%len: sb%len) = val
+	sb%str(sb%len - len(val) + 1: sb%len) = val
 
-end subroutine push_str_builder_char
-
-!===============================================================================
-
-subroutine push_str_builder_str(sb, val)
-	! Push a string onto a str builder
-	class(str_builder_t), intent(inout) :: sb
-	character(len=*), intent(in) :: val
-	!********
-	integer :: i
-
-	do i = 1, len(val)
-		call sb%push_char(val(i:i))
-	end do
-
-	!! TODO: this should be fine without the need for separate char and str versions. Getting weird results but it's probably from somewhere else
-
-	!character(len = :), allocatable :: tmp
-	!integer(kind = 8) :: tmp_cap
-
-	!!print *, "pushing """//val//""""
-
-	!sb%len = sb%len + len(val)
-	!if (sb%len > sb%cap) then
-	!	!print *, 'growing str'
-
-	!	! Grow the buffer capacity.  What is the optimal growth factor?
-	!	tmp_cap = 2 * sb%len
-	!	allocate(character(len = tmp_cap) :: tmp)
-	!	tmp(1: sb%cap) = sb%str
-
-	!	call move_alloc(tmp, sb%str)
-	!	sb%cap = tmp_cap
-
-	!end if
-	!sb%str(sb%len - len(val) + 1: sb%len) = val
-
-end subroutine push_str_builder_str
+end subroutine push_str_builder
 
 !===============================================================================
 
 subroutine push_str(vec, val)
-
 	class(str_vec_t), intent(inout) :: vec
-
 	character(len = *), intent(in) :: val
-
 	!********
-
 	type(str_t) :: val_str
 	type(str_t), allocatable :: tmp(:)
-
 	integer(kind = 8) :: tmp_cap
 
 	!print *, "pushing """//val//""""
-
 	vec%len = vec%len + 1
-
 	if (vec%len > vec%cap) then
-		!print *, 'growing vec'
-
 		tmp_cap = 2 * vec%len
 		allocate(tmp( tmp_cap ))
 		tmp(1: vec%cap) = vec%vec
 
 		call move_alloc(tmp, vec%vec)
 		vec%cap = tmp_cap
-
 	end if
 
 	val_str%str = val

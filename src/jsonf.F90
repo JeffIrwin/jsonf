@@ -607,6 +607,10 @@ recursive function obj_to_str(json, this) result(str)
 			key_str = quote(this%key(i)%str)  ! TODO: quote escaping
 			val_str = val_to_str(json, this%val(i))
 			call sb%push(indent//key_str//": "//val_str)
+
+			!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
+			!call sb%push(indent//quote(this%key(i)%str)//": "//val_to_str(json, this%val(i)))
+
 			call sb%push(","//LINE_FEED)
 		end if
 	end do
@@ -693,27 +697,9 @@ subroutine parse_obj(lexer, json)
 
 	if (DEBUG > 0) then
 		write(*,*) "Finished parse_obj(), nkey = "//to_str(json%nkey)
-		!call print_map("obj =", json)
 	end if
 
 end subroutine parse_obj
-
-!subroutine print_map(prefix, json)
-!	character(len=*), intent(in) :: prefix
-!	type(val_t), intent(in) :: json
-!	!********
-!	integer(kind=8) :: i
-!
-!	write(*,*) prefix
-!	do i = 1, size(json%key)
-!		if (allocated(json%key(i)%str)) then
-!			write(*,*) &
-!				"  key = "//quote(json%key(i)%str)// &
-!				", val = "//json%val(i)%to_str()
-!		end if
-!	end do
-!
-!end subroutine print_map
 
 subroutine set_map(json, key, val)
 	type(val_t), intent(inout) :: json
