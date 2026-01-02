@@ -63,6 +63,8 @@ module jsonf
 
 	type val_t
 		! JSON value type -- scalar, array, or object
+		!
+		! TODO: maybe rename to json_val_t? It might end up user-facing
 		integer :: type
 		type(sca_t) :: sca
 
@@ -467,9 +469,9 @@ subroutine parse_json(json, stream)
 
 end subroutine parse_json
 
-subroutine parse_root(lexer, json)
+subroutine parse_root(lexer, root)
 	type(lexer_t), intent(inout) :: lexer
-	type(val_t), intent(out) :: json
+	type(val_t), intent(out) :: root
 	!********
 	integer :: kind
 	if (DEBUG > 0) print *, "Starting parse_root()"
@@ -481,7 +483,7 @@ subroutine parse_root(lexer, json)
 		case (EOF_TOKEN)
 			exit
 		case (LBRACE_TOKEN)
-			call parse_obj(lexer, json)
+			call parse_obj(lexer, root)
 		case (LBRACKET_TOKEN)
 			! Array
 			call panic("array parsing not implemented yet")  ! TODO
@@ -573,9 +575,9 @@ function json_to_str(this) result(str)
 	str = val_to_str(this, this%root)
 end function json_to_str
 	
-recursive function obj_to_str(json, val) result(str)
+recursive function obj_to_str(json, obj) result(str)
 	type(json_t), intent(inout) :: json
-	type(val_t), intent(in) :: val
+	type(val_t), intent(in) :: obj
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: key_str, val_str, indent
@@ -591,16 +593,16 @@ recursive function obj_to_str(json, val) result(str)
 	call sb%push("{"//LINE_FEED)
 	json%indent_level = json%indent_level + 1
 	indent = repeat(json%indent, json%indent_level)
-	do i = 1, size(val%keys)
-		if (allocated(val%keys(i)%str)) then
-			!write(ERROR_UNIT, *) "key = "//quote(val%keys(i)%str)
+	do i = 1, size(obj%keys)
+		if (allocated(obj%keys(i)%str)) then
+			!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
 
-			key_str = quote(val%keys(i)%str)  ! TODO: quote escaping
-			val_str = val_to_str(json, val%vals(i))
+			key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
+			val_str = val_to_str(json, obj%vals(i))
 			call sb%push(indent//key_str//": "//val_str)
 
 			!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
-			!call sb%push(indent//quote(val%keys(i)%str)//": "//val_to_str(json, val%vals(i)))
+			!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
 
 			call sb%push(","//LINE_FEED)
 		end if
@@ -611,33 +613,33 @@ recursive function obj_to_str(json, val) result(str)
 	str = sb%trim()
 end function obj_to_str
 
-subroutine parse_val(lexer, json)
+subroutine parse_val(lexer, val)
 	type(lexer_t), intent(inout) :: lexer
-	type(val_t), intent(out) :: json
+	type(val_t), intent(out) :: val
 	!********
 	select case (lexer%current_token%kind)
 	case (STR_TOKEN)
 		!print *, "value (string) = ", lexer%current_token%sca%str
-		json%type = STR_TYPE
-		json%sca = lexer%current_token%sca
+		val%type = STR_TYPE
+		val%sca = lexer%current_token%sca
 		call lexer%next_token()
 	case (I64_TOKEN)
-		json%type = I64_TYPE
-		json%sca = lexer%current_token%sca
+		val%type = I64_TYPE
+		val%sca = lexer%current_token%sca
 		call lexer%next_token()
 	case (LBRACE_TOKEN)
-		call parse_obj(lexer, json)
+		call parse_obj(lexer, val)
 	case (LBRACKET_TOKEN)
 		call panic("array parsing not implemented yet")  ! TODO
-		!call parse_arr(json, tokens, pos)
+		!call parse_arr(val, tokens, pos)
 	case default
 		call panic("unexpected value type in object")
 	end select
 end subroutine parse_val
 
-subroutine parse_obj(lexer, json)
+subroutine parse_obj(lexer, obj)
 	type(lexer_t), intent(inout) :: lexer
-	type(val_t), intent(out) :: json
+	type(val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key
 	type(val_t) :: val
@@ -646,12 +648,12 @@ subroutine parse_obj(lexer, json)
 
 	if (DEBUG > 0) print *, "matching LBRACE_TOKEN"
 	call lexer%match(LBRACE_TOKEN)
-	json%type = OBJ_TYPE
+	obj%type = OBJ_TYPE
 
 	! Initialize hash map storage
-	allocate(json%keys(2))
-	allocate(json%vals(2))
-	json%nkeys = 0
+	allocate(obj%keys(2))
+	allocate(obj%vals(2))
+	obj%nkeys = 0
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -668,8 +670,8 @@ subroutine parse_obj(lexer, json)
 		call parse_val(lexer, val)
 		!print *, "val = ", val%to_str()
 
-		! Store key-value pair in json object
-		call set_map(json, key, val)
+		! Store the key-value pair in the object
+		call set_map(obj, key, val)
 
 		! Expect comma or end of object
 		select case (lexer%current_kind())
@@ -686,43 +688,43 @@ subroutine parse_obj(lexer, json)
 	end do
 
 	if (DEBUG > 0) then
-		write(*,*) "Finished parse_obj(), nkeys = "//to_str(json%nkeys)
+		write(*,*) "Finished parse_obj(), nkeys = "//to_str(obj%nkeys)
 	end if
 
 end subroutine parse_obj
 
-subroutine set_map(json, key, val)
-	type(val_t), intent(inout) :: json
+subroutine set_map(obj, key, val)
+	type(val_t), intent(inout) :: obj
 	character(len=*), intent(in) :: key
-	type(val_t), intent(inout) :: val
+	type(val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
 	integer(kind=8) :: i, n, n0
 	type(str_t), allocatable :: old_keys(:)
 	type(val_t), allocatable :: old_vals(:)
 
-	n0 = size(json%keys)
-	if (json%nkeys * 2 >= n0) then
+	n0 = size(obj%keys)
+	if (obj%nkeys * 2 >= n0) then
 		! Resize the entries array if load factor exceeds 0.5
 		n = n0 * 2
-		call move_alloc(json%keys, old_keys)
-		call move_alloc(json%vals, old_vals)
-		allocate(json%keys(n))
-		allocate(json%vals(n))
-		json%nkeys = 0
+		call move_alloc(obj%keys, old_keys)
+		call move_alloc(obj%vals, old_vals)
+		allocate(obj%keys(n))
+		allocate(obj%vals(n))
+		obj%nkeys = 0
 		do i = 1, n0
 			if (allocated(old_keys(i)%str)) then
-				call set_map_core(json, old_keys(i)%str, old_vals(i))
+				call set_map_core(obj, old_keys(i)%str, old_vals(i))
 			end if
 		end do
 		deallocate(old_keys)
 		deallocate(old_vals)
 	end if
-	call set_map_core(json, key, val)
+	call set_map_core(obj, key, val)
 
 end subroutine set_map
 
-subroutine set_map_core(json, key, val)
-	type(val_t), intent(inout) :: json
+subroutine set_map_core(obj, key, val)
+	type(val_t), intent(inout) :: obj
 	character(len=*), intent(in) :: key
 	type(val_t), intent(inout) :: val
 	!********
@@ -731,7 +733,7 @@ subroutine set_map_core(json, key, val)
 	!print *, "set_map_core: key = "//quote(key)
 
 	hash = djb2_hash(key)
-	n = size(json%keys)
+	n = size(obj%keys)
 	!print *, "n = ", n
 	!print *, "hash = ", hash
 
@@ -739,19 +741,19 @@ subroutine set_map_core(json, key, val)
 	! overflow become negative for long strs
 	idx = modulo(hash, n) + 1
 	do
-		if (.not. allocated(json%keys(idx)%str)) then
+		if (.not. allocated(obj%keys(idx)%str)) then
 			! Empty slot found, insert new entry
-			json%keys(idx)%str = key
-			if (DEBUG > 0) print *, "key = "//quote(json%keys(idx)%str)
-			call move_val(val, json%vals(idx))
-			json%nkeys = json%nkeys + 1
+			obj%keys(idx)%str = key
+			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
+			call move_val(val, obj%vals(idx))
+			obj%nkeys = obj%nkeys + 1
 			exit
-		else if (is_str_eq(json%keys(idx)%str, key)) then
+		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
 			!
 			! TODO: ban duplicate keys by default, option to allow. Maybe
 			! include an option for first vs last dupe key to take precedence
-			call move_val(val, json%vals(idx))
+			call move_val(val, obj%vals(idx))
 			exit
 		else
 			! Collision, try next index (linear probing)
