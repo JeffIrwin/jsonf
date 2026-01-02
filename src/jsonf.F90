@@ -66,7 +66,11 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
-		! TODO: should maps also have an ordering index array, to preserve insertion order?  Not part of json standard but very helpful for consistent str/print output
+		! TODO: should maps also have an ordering index array, to preserve
+		! insertion order?  Not part of json standard but very helpful for
+		! consistent str/print output
+		!
+		! jq echos with consistent order
 		integer(kind=8) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(val_t), allocatable :: vals(:)
@@ -100,7 +104,7 @@ module jsonf
 
 	type token_vec_t
 		type(token_t), allocatable :: vec(:)
-		integer(kind=8) :: len_, cap
+		integer(kind=8) :: len, cap
 		contains
 			procedure :: &
 				push => push_token, &
@@ -366,7 +370,7 @@ end function new_token
 
 function new_token_vec() result(vec)
 	type(token_vec_t) :: vec
-	vec%len_ = 0
+	vec%len = 0
 	vec%cap = 2  ! I think a small default makes sense here
 	allocate(vec%vec( vec%cap ))
 end function new_token_vec
@@ -776,8 +780,8 @@ end subroutine move_val
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
 	!********
-	this%vec = this%vec(1: this%len_)
-	this%cap = this%len_
+	this%vec = this%vec(1: this%len)
+	this%cap = this%len
 end subroutine trim_token_vec
 
 subroutine push_token(vec, val)
@@ -787,16 +791,16 @@ subroutine push_token(vec, val)
 	integer(kind=8) :: tmp_cap
 	type(token_t), allocatable :: tmp(:)
 
-	vec%len_ = vec%len_ + 1
-	if (vec%len_ > vec%cap) then
-		tmp_cap = 2 * vec%len_
+	vec%len = vec%len + 1
+	if (vec%len > vec%cap) then
+		tmp_cap = 2 * vec%len
 		allocate(tmp( tmp_cap ))
 		tmp(1: vec%cap) = vec%vec
 
 		call move_alloc(tmp, vec%vec)
 		vec%cap = tmp_cap
 	end if
-	vec%vec( vec%len_ ) = val
+	vec%vec( vec%len ) = val
 
 end subroutine push_token
 
@@ -810,7 +814,7 @@ module function tokens_to_str(tokens) result(str)
 
 	sb = new_str_builder()
 	call sb%push('tokens = '//line_feed//'<<<'//line_feed)
-	do i = 1, tokens%len_
+	do i = 1, tokens%len
 		call sb%push("    " &
 			//"<"//          tokens%vec(i)%text  //"> " &
 			//"<"//kind_name(tokens%vec(i)%kind )//">"  &
