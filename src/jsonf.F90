@@ -68,10 +68,11 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
-		integer(kind=8) :: nkeys = 0
+		integer(kind=8) :: nkeys = 0, nvals = 0
 		type(str_t), allocatable :: keys(:)
 		type(val_t), allocatable :: vals(:)
 		integer(kind=8), allocatable :: idx(:)  ! for consistent output of object hashmap members
+		integer(kind=8), allocatable :: place(:)  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
 	end type val_t
@@ -604,18 +605,28 @@ recursive function keyval_to_str(json, obj, i, indent) result(str)
 end function keyval_to_str
 
 recursive function obj_to_str(json, obj) result(str)
+	use sort_m
 	type(json_t), intent(inout) :: json
 	type(val_t), intent(in) :: obj
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: indent
 	integer(kind=8) :: i, ii
+	integer(kind=8), allocatable :: idx(:)
 	type(str_builder_t) :: sb
 
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
 
-	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
+	write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
+	write(ERROR_UNIT, *) "nvals = ", obj%nvals
+	write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place
+	!write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place(obj%idx(1: obj%nvals))
+	write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place(obj%idx(1: obj%nkeys))
+
+	idx = sort_index64(obj%place(obj%idx(1: obj%nkeys)))
+	!idx = sort_index64(obj%place(obj%idx(1: obj%nvals)))
+	write(ERROR_UNIT, *) "idx = ", idx
 
 	sb = new_str_builder()
 	call sb%push("{")
@@ -634,7 +645,10 @@ recursive function obj_to_str(json, obj) result(str)
 	else
 		do ii = 1, obj%nkeys
 			! TODO: omit trailing comma -- trivial for this case
-			i = obj%idx(ii)
+			!i = obj%idx(ii)
+			!i = idx(ii)
+			i = obj%idx( idx(ii) )
+			!i = idx( obj%idx(ii) )
 			call sb%push(keyval_to_str(json, obj, i, indent))
 		end do
 	end if
@@ -691,7 +705,8 @@ subroutine parse_obj(lexer, obj)
 
 	! TODO: pass json container to control whether to allocate idx or not based
 	! on hashed_order
-	allocate(obj%idx(INIT_SIZE))
+	allocate(obj%idx  (INIT_SIZE))
+	allocate(obj%place(INIT_SIZE))
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -737,7 +752,7 @@ subroutine set_map(obj, key, val)
 	type(val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
 	integer(kind=8) :: i, ii, n, n0, old_nkeys
-	integer(kind=8), allocatable :: old_idx(:)
+	integer(kind=8), allocatable :: old_idx(:), old_place(:)
 	type(str_t), allocatable :: old_keys(:)
 	type(val_t), allocatable :: old_vals(:)
 
@@ -746,29 +761,26 @@ subroutine set_map(obj, key, val)
 		! Resize the entries array if load factor exceeds 0.5
 		n = n0 * 2
 		old_nkeys = obj%nkeys
-		call move_alloc(obj%keys, old_keys)
-		call move_alloc(obj%vals, old_vals)
-		allocate(obj%keys(n))
-		allocate(obj%vals(n))
-		obj%nkeys = 0
 
 		! Just manually manage idx growth if we have to do it here anyway.
 		! Otherwise it could be an i64_vec_t
-		!deallocate(obj%idx)
+		call move_alloc(obj%keys, old_keys)
+		call move_alloc(obj%vals, old_vals)
 		call move_alloc(obj%idx, old_idx)
-		allocate(obj%idx(n))
-		!obj%idx = new_i64_vec()  
+		call move_alloc(obj%place, old_place)
+
+		allocate(obj%keys (n))
+		allocate(obj%vals (n))
+		allocate(obj%idx  (n))
+		allocate(obj%place(n))
+		obj%nkeys = 0
 
 		do ii = 1, old_nkeys
 			i = old_idx(ii)
 			call set_map_core(obj, old_keys(i)%str, old_vals(i))
 		end do
-		!do i = 1, n0
-		!	if (allocated(old_keys(i)%str)) then  ! could avoid this check by iterating only over obj%idx(:)
-		!		call set_map_core(obj, old_keys(i)%str, old_vals(i))
-		!	end if
-		!end do
 
+		deallocate(old_place)
 		deallocate(old_idx)
 		deallocate(old_vals)
 		deallocate(old_keys)
@@ -801,7 +813,9 @@ subroutine set_map_core(obj, key, val)
 			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
 			call move_val(val, obj%vals(idx))
 			obj%nkeys = obj%nkeys + 1
+			obj%nvals = obj%nvals + 1
 			obj%idx( obj%nkeys ) = idx
+			obj%place(idx) = obj%nvals
 			!print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
@@ -812,6 +826,8 @@ subroutine set_map_core(obj, key, val)
 			call move_val(val, obj%vals(idx))
 			! TODO: set obj%idx. duplicate keys are out of order otherwise
 			!obj%idx( obj%nkeys ) = idx  ! not like this. need to shift or sort whole array?
+			obj%nvals = obj%nvals + 1  ! nvals is incremented here but *not* nkeys
+			obj%place(idx) = obj%nvals
 			exit
 		else
 			! Collision, try next index (linear probing)
@@ -830,14 +846,15 @@ subroutine move_val(src, dst)
 	select case (src%type)
 	case (OBJ_TYPE)
 		dst%nkeys = src%nkeys
-		call move_alloc(src%keys, dst%keys)
-		call move_alloc(src%vals, dst%vals)
-
-		call move_alloc(src%idx , dst%idx)
-		!call move_alloc(src%idx%vec, dst%idx%vec)
+		dst%nvals = src%nvals
+		call move_alloc(src%keys , dst%keys)
+		call move_alloc(src%vals , dst%vals)
+		call move_alloc(src%idx  , dst%idx)
+		call move_alloc(src%place, dst%place)
 
 	case (ARR_TYPE)
 		call panic("array move_val not implemented yet")  ! TODO
+
 	case default
 		dst%sca = src%sca
 	end select
