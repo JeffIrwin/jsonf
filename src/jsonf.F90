@@ -124,6 +124,7 @@ module jsonf
 		contains
 			procedure :: &
 				lex, &
+				match => lexer_match, &
 				next_char => lexer_next_char, &
 				next => lexer_next, &  ! TODO: rename next_token
 				current => lexer_current, &
@@ -490,9 +491,9 @@ subroutine parse_root(lexer, json)
 	end do
 end subroutine parse_root
 
-subroutine match(lexer, kind)
+subroutine lexer_match(lexer, kind)
 	! TODO: return a token as a fn? Might be useful to have the matched token's position in case of later diagnostics. Or could just use lexer%previous_token in caller
-	type(lexer_t), intent(inout) :: lexer
+	class(lexer_t), intent(inout) :: lexer
 	integer, intent(in) :: kind
 	!********
 	if (lexer%current_kind() == kind) then
@@ -505,7 +506,7 @@ subroutine match(lexer, kind)
 		kind_name(kind)//", but got "// &
 		kind_name(lexer%current_kind()))
 
-end subroutine match
+end subroutine lexer_match
 
 ! Do these need to be declared recursive? I remember certain fortran compilers being picky about it, even though it's only inderictly recursive.  Same with obj_to_str()
 recursive function val_to_str(json, this) result(str)
@@ -644,9 +645,8 @@ subroutine parse_obj(lexer, json)
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
 
-	! TODO: make `match()` a lexer class method
 	if (DEBUG > 0) print *, "matching LBRACE_TOKEN"
-	call match(lexer, LBRACE_TOKEN)
+	call lexer%match(LBRACE_TOKEN)
 	json%type = OBJ_TYPE
 
 	! Initialize hash map storage
@@ -661,11 +661,11 @@ subroutine parse_obj(lexer, json)
 			exit
 		end if
 
-		call match(lexer, STR_TOKEN)
+		call lexer%match(STR_TOKEN)
 		key = lexer%previous_token%sca%str
 		!print *, "key = ", key
 
-		call match(lexer, COLON_TOKEN)
+		call lexer%match(COLON_TOKEN)
 		call parse_val(lexer, val)
 		!print *, "val = ", val%to_str()
 
@@ -736,7 +736,8 @@ subroutine set_map_core(json, key, val)
 	!print *, "n = ", n
 	!print *, "hash = ", hash
 
-	! TODO: my other map implementations need modulo instead of mod
+	! TODO: my other map implementations need modulo instead of mod, which can
+	! overflow become negative for long strs
 	idx = modulo(hash, n) + 1
 	do
 		if (.not. allocated(json%key(idx)%str)) then
@@ -782,7 +783,6 @@ end subroutine move_val
 subroutine trim_token_vec(this)
 	class(token_vec_t) :: this
 	!********
-	type(token_t), allocatable :: tmp(:)
 	this%vec = this%vec(1: this%len_)
 	this%cap = this%len_
 end subroutine trim_token_vec
