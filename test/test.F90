@@ -163,6 +163,26 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = '{"a":1,}'
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2", nfail, ntot)
 
+	str = '69'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3", nfail, ntot)
+
+	str = '420'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4", nfail, ntot)
+
+	str = '"my string"'
+	!str = '"my string'  ! unterminated str
+	!print *, "str = ", str
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 5", nfail, ntot)
+
 end subroutine test_basic_jsons
 
 end module jsonf__test

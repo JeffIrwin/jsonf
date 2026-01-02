@@ -297,8 +297,7 @@ function lex(lexer) result(token)
 				call lexer%next_char()
 			end if
 
-			if (lexer%current() == '"') then
-				call lexer%next_char()
+			if (lexer%current() == '"' .or. lexer%stream%is_eof) then
 				exit
 			end if
 
@@ -313,6 +312,7 @@ function lex(lexer) result(token)
 			call panic("unterminated string literal")  ! TODO: diagnostics
 			return
 		end if
+		call lexer%next_char()
 
 		sca = new_literal(STR_TYPE, str = text)
 		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(sca%str)
@@ -465,36 +465,9 @@ subroutine parse_json(json, stream)
 
 	lexer = new_lexer(stream)
 	!write(*,*) "Parsing JSON tokens ..."
-	call parse_root(lexer, json%root)
+	call parse_val(lexer, json%root)
 
 end subroutine parse_json
-
-subroutine parse_root(lexer, root)
-	type(lexer_t), intent(inout) :: lexer
-	type(val_t), intent(out) :: root
-	!********
-	integer :: kind
-	if (DEBUG > 0) print *, "Starting parse_root()"
-	! TODO: this should just do parse_val() to correctly handle primitive
-	! top-level JSONs. Does parse_root() need to exist as a wrapper at all or
-	! should the caller just do parse_val() instead?
-	do
-		kind = lexer%current_kind()
-		if (DEBUG > 0) print *, "tok kind = ", kind_name(kind)
-
-		select case (kind)
-		case (EOF_TOKEN)
-			exit
-		case (LBRACE_TOKEN)
-			call parse_obj(lexer, root)
-		case (LBRACKET_TOKEN)
-			! Array
-			call panic("array parsing not implemented yet")  ! TODO
-		case default
-			call panic("expected object or array at root")
-		end select
-	end do
-end subroutine parse_root
 
 subroutine lexer_match(lexer, kind)
 	class(lexer_t), intent(inout) :: lexer
