@@ -57,7 +57,7 @@ subroutine test_basic_jsons(nfail, ntot)
 
 	write(*,*) "Unit testing basic JSON strings ..."
 
-	str = '{"a": 2}'
+	str = '{"a": 1}'
 	call json%read_str(str)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
