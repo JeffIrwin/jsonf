@@ -76,6 +76,7 @@ module jsonf
 		integer(kind=8) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(val_t), allocatable :: vals(:)
+		type(i64_vec_t) :: idx  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
 	end type val_t
@@ -88,6 +89,7 @@ module jsonf
 		! String and print output formatting options
 		character(len=:), allocatable :: indent
 		logical :: compact = .false.
+		logical :: hashed_order = .false.  ! if false, output in the same order as the input source
 
 		integer :: indent_level
 
@@ -585,7 +587,7 @@ recursive function obj_to_str(json, obj) result(str)
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: key_str, val_str, indent
-	integer(kind=8) :: i
+	integer(kind=8) :: i, ii
 	type(str_builder_t) :: sb
 
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
@@ -593,29 +595,58 @@ recursive function obj_to_str(json, obj) result(str)
 
 	! TODO: add up an incrementor and compare to nkeys to decide when to omit last trailing comma
 
+	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx%vec(1: obj%idx%len)
+
 	sb = new_str_builder()
 	call sb%push("{")
 	if (.not. json%compact) call sb%push(LINE_FEED)
 	json%indent_level = json%indent_level + 1
 	indent = repeat(json%indent, json%indent_level)
-	do i = 1, size(obj%keys)
-		if (allocated(obj%keys(i)%str)) then
-			!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
 
-			key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
-			val_str = val_to_str(json, obj%vals(i))
-			if (.not. json%compact) call sb%push(indent)
-			call sb%push(key_str//":")
-			if (.not. json%compact) call sb%push(" ")
-			call sb%push(val_str)
+	! TODO: dry these loops
+	if (json%hashed_order) then
+		do i = 1, size(obj%keys)
+			if (allocated(obj%keys(i)%str)) then
 
-			!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
-			!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
+				!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
 
-			call sb%push(",")
-			if (.not. json%compact) call sb%push(LINE_FEED)
-		end if
-	end do
+				key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
+				val_str = val_to_str(json, obj%vals(i))
+				if (.not. json%compact) call sb%push(indent)
+				call sb%push(key_str//":")
+				if (.not. json%compact) call sb%push(" ")
+				call sb%push(val_str)
+
+				!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
+				!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
+
+				call sb%push(",")
+				if (.not. json%compact) call sb%push(LINE_FEED)
+
+			end if
+		end do
+	else
+		do ii = 1, obj%idx%len
+			i = obj%idx%vec(ii)
+
+				!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
+
+				key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
+				val_str = val_to_str(json, obj%vals(i))
+				if (.not. json%compact) call sb%push(indent)
+				call sb%push(key_str//":")
+				if (.not. json%compact) call sb%push(" ")
+				call sb%push(val_str)
+
+				!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
+				!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
+
+				call sb%push(",")
+				if (.not. json%compact) call sb%push(LINE_FEED)
+
+		end do
+	end if
+
 	json%indent_level = json%indent_level - 1
 	indent = repeat(json%indent, json%indent_level)
 	if (.not. json%compact) call sb%push(indent)
@@ -664,6 +695,10 @@ subroutine parse_obj(lexer, obj)
 	allocate(obj%keys(2))
 	allocate(obj%vals(2))
 	obj%nkeys = 0
+
+	! TODO: pass json container to control whether to allocate idx or not based
+	! on hashed_order
+	obj%idx = new_i64_vec()
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -721,6 +756,7 @@ subroutine set_map(obj, key, val)
 		allocate(obj%keys(n))
 		allocate(obj%vals(n))
 		obj%nkeys = 0
+		obj%idx = new_i64_vec()  ! TODO: just manually manage idx growth if we have to do it here anyway
 		do i = 1, n0
 			if (allocated(old_keys(i)%str)) then
 				call set_map_core(obj, old_keys(i)%str, old_vals(i))
@@ -757,6 +793,8 @@ subroutine set_map_core(obj, key, val)
 			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
 			call move_val(val, obj%vals(idx))
 			obj%nkeys = obj%nkeys + 1
+			call obj%idx%push(idx)
+			print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
@@ -764,6 +802,7 @@ subroutine set_map_core(obj, key, val)
 			! TODO: ban duplicate keys by default, option to allow. Maybe
 			! include an option for first vs last dupe key to take precedence
 			call move_val(val, obj%vals(idx))
+			! TODO: set obj%idx?
 			exit
 		else
 			! Collision, try next index (linear probing)

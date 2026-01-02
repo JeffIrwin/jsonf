@@ -41,11 +41,13 @@ subroutine test_in1(nfail, ntot)
 
 	str = read_file(filename)
 	!print *, "str = "//LINE_FEED//str
+	json%hashed_order = .true.
 	call json%read_str(str)
 	str_out = json%to_str()
-	!print *, "str_out = ", str_out
+	print *, "str_out = ", str_out
 
-	! TODO: this will break depending on the hash ordering
+	! TODO: this will break depending on the ordering, e.g. if djb2_hash() is
+	! ever modified
 	expect = &
 		'{' // LINE_FEED // &
 		'    "c": "my str",' // LINE_FEED // &
@@ -56,10 +58,22 @@ subroutine test_in1(nfail, ntot)
 
 	json%compact = .true.
 	str_out = json%to_str()
+	print *, "str_out = ", str_out
 	expect = '{"c":"my str","a":1,"b":2,}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 	! TODO: add tests with multiple indentation depths and custom indent strs
+
+	! TODO: setting hashed_order true, reading json, and then changing it to
+	! false before str conversion will cause problems.  Handle this case
+
+	json%hashed_order = .false.
+	json%compact = .true.
+	str = read_file(filename)
+	str_out = json%to_str()
+	print *, "str_out = ", str_out
+	expect = '{"a":1,"b":2,"c":"my str",}'
+	TEST(is_str_eq(str_out, expect), "test_in1 3", nfail, ntot)
 
 end subroutine test_in1
 

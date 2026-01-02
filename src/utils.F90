@@ -68,6 +68,13 @@ module utils_m
 
 	!********
 
+	type i64_vec_t
+		integer(kind=8), allocatable :: vec(:)
+		integer(kind = 8) :: len, cap
+		contains
+			procedure :: push => push_i64
+	end type i64_vec_t
+
 	type str_vec_t
 		type(str_t), allocatable :: vec(:)
 		integer(kind = 8) :: len, cap
@@ -89,6 +96,13 @@ function new_str_builder() result(sb)
 end function new_str_builder
 
 !===============================================================================
+
+function new_i64_vec() result(vec)
+	type(i64_vec_t) :: vec
+	vec%len = 0
+	vec%cap = 2
+	allocate(vec%vec( vec%cap ))
+end function new_i64_vec
 
 function new_str_vec() result(vec)
 	type(str_vec_t) :: vec
@@ -147,6 +161,33 @@ subroutine push_str_builder(sb, val)
 	sb%str(sb%len - len(val) + 1: sb%len) = val
 
 end subroutine push_str_builder
+
+!===============================================================================
+
+subroutine push_i64(vec, val)
+	class(i64_vec_t), intent(inout) :: vec
+	integer(kind=8), intent(in) :: val
+	!********
+	!type(str_t) :: val_str
+	integer(kind=8), allocatable :: tmp(:)
+	integer(kind=8) :: tmp_cap
+
+	!print *, "pushing """//val//""""
+	vec%len = vec%len + 1
+	if (vec%len > vec%cap) then
+		tmp_cap = 2 * vec%len
+		allocate(tmp( tmp_cap ))
+		tmp(1: vec%cap) = vec%vec
+
+		call move_alloc(tmp, vec%vec)
+		vec%cap = tmp_cap
+	end if
+
+	!val_str%str = val
+	!vec%vec( vec%len ) = val_str
+	vec%vec( vec%len ) = val
+
+end subroutine push_i64
 
 !===============================================================================
 
