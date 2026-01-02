@@ -37,7 +37,7 @@ module jsonf
 	! - test diagnostics reporting line/column numbers
 	! - test pretty-printing output option
 
-	integer, parameter :: DEBUG = 1
+	integer, parameter :: DEBUG = 0
 
 	type stream_t
 		integer :: type
@@ -72,20 +72,13 @@ module jsonf
 		type(val_t), allocatable :: val(:)
 
 		!type(arr_t) :: arr  ! TODO: arrays
-
-		contains
-			!procedure :: &
-			!	to_str => val_to_str
 	end type val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
 	type json_t
 		! JSON top-level type
 		type(val_t) :: root
-
 		character(len=:), allocatable :: indent
-		!character(len=:), allocatable :: indent = "    "
-		!character(len=*) :: indent = "    "
 		integer :: indent_level
 
 		contains
@@ -115,15 +108,13 @@ module jsonf
 	end type token_vec_t
 
 	type lexer_t
-		!character(len=:), allocatable :: text
 		integer(kind=8) :: pos
-		integer         :: line  ! TODO: use this for diags
+		integer         :: line  ! TODO: use this for diags. set and increment somewhere
 		type(str_vec_t) :: diagnostics
 		type(stream_t)  :: stream
 
-		character :: current_char, previous_char
-
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
+		character :: current_char, previous_char
 		type(token_t) :: current_token, previous_token
 		logical :: &
 			has_current_char   = .false., &
@@ -134,10 +125,9 @@ module jsonf
 			procedure :: &
 				lex, &
 				next_char => lexer_next_char, &
-				next => lexer_next, &
+				next => lexer_next, &  ! TODO: rename next_token
 				current => lexer_current, &
 				current_kind => lexer_current_kind
-				!peek => lexer_peek
 	end type lexer_t
 
 	integer, parameter :: &
@@ -168,28 +158,26 @@ character function lexer_current(lexer)
 	! Current char
 	class(lexer_t) :: lexer
 
-	!lexer_current = lexer%peek(0)
-	if (lexer%has_current_char) then
-		lexer_current = lexer%current_char
-	else
-		lexer_current = lexer%stream%get()
-		lexer%current_char = lexer_current
+	! TODO: can we just do this once instead of checking a bool every time?
+	! Same for token in lexer_current_kind()
+	if (.not. lexer%has_current_char) then
+		lexer%current_char = lexer%stream%get()
 		lexer%has_current_char = .true.
 	end if
+	lexer_current = lexer%current_char
 
 end function lexer_current
 
 subroutine lexer_next_char(lexer)
 	class(lexer_t), intent(inout) :: lexer
 	!********
-	!character :: c
 	lexer%previous_char = lexer%current_char
-	!c =  lexer%stream%get()
 	lexer%current_char =  lexer%stream%get()
 end subroutine lexer_next_char
 
 subroutine lexer_next(lexer)
-	! Advance to the next non-whitespace token
+	! Advance to the next non-whitespace token.  Comment skipping could also be
+	! added here
 	class(lexer_t), intent(inout) :: lexer
 	!********
 	lexer%previous_token = lexer%current_token
@@ -202,7 +190,6 @@ end subroutine lexer_next
 
 integer function lexer_current_kind(lexer)
 	class(lexer_t) :: lexer
-	!type(token_t) :: token
 
 	if (lexer%has_current_token) then
 		lexer%current_token = lexer%current_token
@@ -214,24 +201,6 @@ integer function lexer_current_kind(lexer)
 
 end function lexer_current_kind
 
-!character function lexer_lookahead(lexer)
-!	class(lexer_t) :: lexer
-!	lexer_lookahead = lexer%peek(1)
-!end function lexer_lookahead
-
-!character function lexer_peek(lexer, offset)
-!	class(lexer_t) :: lexer
-!	integer, intent(in) :: offset
-!	!********
-!	integer(kind=8) :: pos
-!	pos = lexer%pos + offset
-!	if (pos < 1 .or. pos > len(lexer%text)) then
-!		lexer_peek = null_char
-!		return
-!	end if
-!	lexer_peek = lexer%text(pos: pos)
-!end function lexer_peek
-
 function new_literal(type, bool, i64, f64, str) result(lit)
 	integer, intent(in) :: type
 	!********
@@ -242,10 +211,10 @@ function new_literal(type, bool, i64, f64, str) result(lit)
 	type(sca_t) :: lit
 
 	lit%type = type
-	if (present(bool)) lit%bool    = bool
-	if (present(f64 )) lit%f64     = f64
-	if (present(i64 )) lit%i64     = i64
-	if (present(str)) lit%str = str
+	if (present(bool)) lit%bool = bool
+	if (present(f64 )) lit%f64  = f64
+	if (present(i64 )) lit%i64  = i64
+	if (present(str )) lit%str  = str
 
 end function new_literal
 
@@ -265,7 +234,6 @@ function lex(lexer) result(token)
 		write(*,*) "lex: pos = "//to_str(lexer%pos)
 	end if
 
-	!if (lexer%pos > len(lexer%text)) then
 	if (lexer%stream%is_eof) then
 		token = new_token(EOF_TOKEN, lexer%pos, null_char)
 		return
@@ -278,10 +246,8 @@ function lex(lexer) result(token)
 		sb = new_str_builder()
 		do while (is_whitespace(lexer%current()))
 			call sb%push(lexer%current())
-			!lexer%pos = lexer%pos + 1
 			call lexer%next_char()
 		end do
-		!text = lexer%text(start: lexer%pos-1)
 		text = sb%trim()
 		token = new_token(whitespace_token, start, text)
 		return
@@ -296,17 +262,14 @@ function lex(lexer) result(token)
 
 			if (is_sign(lexer%current()) .and. .not. &
 				is_expo(lexer%previous_char)) exit
-				!is_expo(lexer%peek(-1))) exit
 
 			float_ = float_ .or. .not. is_digit_under(lexer%current())
 
-			!lexer%pos = lexer%pos + 1
 			call sb%push(lexer%current())
 			call lexer%next_char()
 		end do
 		end_ = lexer%pos
 
-		!text = lexer%text(start: end_ - 1)
 		text = sb%trim()
 		text_strip = rm_char(text, "_")
 
@@ -327,36 +290,30 @@ function lex(lexer) result(token)
 
 	if (lexer%current() == '"') then
 		! String literal
-		!lexer%pos = lexer%pos + 1  ! Skip opening quote
 		call lexer%next_char()  ! skip opening quote
 		start = lexer%pos
 
 		sb = new_str_builder()
 		do
-			print *, "lexer current = ", lexer%current()
+			!print *, "lexer current = ", lexer%current()
+
 			! TODO: test str escape rules. Only 8 characters or a unicode sequence are allowed to follow a backslash
 			if (lexer%current() == "\") then
-				!lexer%pos = lexer%pos + 1
 				call lexer%next_char()
 				call sb%push(lexer%current())
-				!lexer%pos = lexer%pos + 1
 				call lexer%next_char()
 			end if
 
 			if (lexer%current() == '"') then
-				!lexer%pos = lexer%pos + 1
 				call lexer%next_char()
 				exit
 			end if
 
 			call sb%push(lexer%current())
-			!lexer%pos = lexer%pos + 1
 			call lexer%next_char()
 		end do
-		!text = lexer%text(start: lexer%pos - 2)
 		text = sb%trim()
 
-		!if (lexer%pos > len(lexer%text)) then
 		if (lexer%stream%is_eof) then
 			! Unterminated string
 			token = new_token(BAD_TOKEN, start, text)
@@ -364,7 +321,6 @@ function lex(lexer) result(token)
 			return
 		end if
 
-		!sca = new_literal(STR_TYPE, str = sb%trim())
 		sca = new_literal(STR_TYPE, str = text)
 		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(sca%str)
 		token = new_token(STR_TOKEN, start, text, sca)
@@ -405,7 +361,6 @@ function lex(lexer) result(token)
 
 	end select
 
-	!lexer%pos = lexer%pos + 1
 	call lexer%next_char()
 
 end function lex
@@ -431,86 +386,26 @@ function new_token_vec() result(vec)
 	allocate(vec%vec( vec%cap ))
 end function new_token_vec
 
-!function new_lexer(text, src_file) result(lexer)
 function new_lexer(stream) result(lexer)
 	type(stream_t) :: stream
-	!character(len=*) :: text, src_file
 	type(lexer_t) :: lexer
 	!********
-	integer :: i, i0, nlines
-
-	integer, allocatable :: lines(:)
-
-	!lexer%text = text
 	lexer%pos  = 1
 	lexer%diagnostics = new_str_vec()
 	lexer%stream = stream
-
-	!! Count lines
-	!nlines = 0
-	!i = 0
-	!do
-	!	i = i + 1
-	!	if (i > len(text)) exit
-
-	!	if (i == len(text) .or. &
-	!		text(i:i) == line_feed .or. &
-	!		text(i:i) == carriage_return) then
-
-	!		nlines = nlines + 1
-	!	end if
-
-	!end do
-	!!print *, 'nlines = ', nlines
-
-	!allocate(lines(nlines + 1))
-
-	!! Get character indices for the start of each line and save them in lines(:)
-	!nlines = 0
-	!i = 0
-	!i0 = 0
-	!do
-	!	i = i + 1
-	!	if (i > len(text)) exit
-
-	!	if (i == len(text) .or. &
-	!		text(i:i) == line_feed .or. &
-	!		text(i:i) == carriage_return) then
-
-	!		nlines = nlines + 1
-	!		lines(nlines) = i0 + 1
-	!		i0 = i
-	!	end if
-
-	!end do
-	!lines(nlines + 1) = len(text) + 1
-
-	!!print *, 'lines = ', lines
-
-	!if (DEBUG > 1) then
-	!	write(*,*) 'lines = '
-	!	do i = 1, nlines
-	!		write(*, '(i5,a)') i, ' | '//text(lines(i): lines(i+1) - 2)
-	!	end do
-	!end if
-
 end function new_lexer
 
 subroutine read_file_json(json, filename)
 	class(json_t) :: json
 	character(len=*), intent(in) :: filename
 	!********
-	character(len=:), allocatable :: str
 	integer :: io
 	type(stream_t) :: stream
-
-	!str = read_file(filename)
-	!!print *, "str = "//LINE_FEED//str
 
 	! Stream chars one at a time
 	stream%type = FILE_STREAM
 	open(file = filename, newunit = stream%unit, action = "read", access = "stream", iostat = io)
-	print *, "opened stream unit "//to_str(stream%unit)
+	!print *, "opened stream unit "//to_str(stream%unit)
 	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
 
 	call json%parse(stream)
@@ -534,25 +429,24 @@ character function get_stream_char(stream) result(c)
 	integer :: io
 	select case (stream%type)
 	case (FILE_STREAM)
-		print *, "reading stream unit "//to_str(stream%unit)
+		!print *, "reading stream unit "//to_str(stream%unit)
 		read(stream%unit, iostat = io) c
 		if (io == IOSTAT_END) then
 			stream%is_eof = .true.
 			c = NULL_CHAR
 			return
 		end if
-		print *, "c = ", quote(c)
+		!print *, "c = ", quote(c)
 
 	case (STR_STREAM)
-		print *, "getting str stream pos "//to_str(stream%pos)
-		!print *, "str = "//quote(stream%str)
+		!print *, "getting str stream pos "//to_str(stream%pos)
 		if (stream%pos > len(stream%str)) then
 			stream%is_eof = .true.
 			c = NULL_CHAR
 			return
 		end if
 		c = stream%str(stream%pos:stream%pos)
-		print *, "c = ", quote(c)
+		!print *, "c = ", quote(c)
 		stream%pos = stream%pos + 1
 
 	case default
@@ -560,21 +454,14 @@ character function get_stream_char(stream) result(c)
 	end select
 end function get_stream_char
 
-!subroutine parse_json(json, str)
 subroutine parse_json(json, stream)
 	class(json_t), intent(inout) :: json
-	!character(len=*), intent(in) :: str
 	type(stream_t) :: stream
 	!********
 	type(lexer_t) :: lexer
-	type(token_t) :: token
-	type(token_vec_t) :: tokens
 
-	!lexer = new_lexer(str, "<dummy-filename>")
 	lexer = new_lexer(stream)
-	write(*,*) "Parsing JSON tokens ..."
-
-	! Maybe a parser type would be useful to encapsulate diagnostics. Or just put them in the lexer to simplify things?
+	!write(*,*) "Parsing JSON tokens ..."
 	call parse_root(lexer, json%root)
 
 end subroutine parse_json
@@ -654,12 +541,10 @@ subroutine write_json(this, filename, unit_)
 		unit__ = OUTPUT_UNIT
 	end if
 
-	!write(unit__, "(a)") this%root%to_str()
-	!write(unit__, "(a)") val_to_str(this, this%root)
 	write(unit__, "(a)") json_to_str(this)
 
 	if (present(filename)) then
-		print *, "Closing unit "//to_str(unit__)
+		!print *, "Closing unit "//to_str(unit__)
 		close(unit__)
 	end if
 
@@ -679,7 +564,6 @@ function json_to_str(this) result(str)
 	class(json_t) :: this
 	character(len = :), allocatable :: str
 	!********
-	!str = this%root%to_str()
 	if (.not. allocated(this%indent)) then
 		! I would just initialize this in the type declaration but Fortran is redacted
 		this%indent = INDENT_DEFAULT
@@ -967,6 +851,8 @@ function kind_name(kind)
 			"STR_TOKEN        ", & ! 16
 			"OBJ_TYPE         ", & ! 17
 			"ARR_TYPE         ", & ! 18
+			"FILE_STREAM      ", & ! 19
+			"STR_STREAM       ", & ! 20
 			"unknown          "  & ! inf (trailing comma hack)
 		]
 
