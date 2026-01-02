@@ -76,7 +76,8 @@ module jsonf
 		integer(kind=8) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(val_t), allocatable :: vals(:)
-		type(i64_vec_t) :: idx  ! for consistent output of object hashmap members
+		!type(i64_vec_t) :: idx  ! for consistent output of object hashmap members
+		integer(kind=8), allocatable :: idx(:)  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
 	end type val_t
@@ -596,6 +597,7 @@ recursive function obj_to_str(json, obj) result(str)
 	! TODO: add up an incrementor and compare to nkeys to decide when to omit last trailing comma
 
 	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx%vec(1: obj%idx%len)
+	write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
 
 	sb = new_str_builder()
 	call sb%push("{")
@@ -626,8 +628,8 @@ recursive function obj_to_str(json, obj) result(str)
 			end if
 		end do
 	else
-		do ii = 1, obj%idx%len
-			i = obj%idx%vec(ii)
+		do ii = 1, obj%nkeys
+			i = obj%idx(ii)
 
 				!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
 
@@ -684,21 +686,23 @@ subroutine parse_obj(lexer, obj)
 	!********
 	character(len=:), allocatable :: key
 	type(val_t) :: val
+	integer, parameter :: INIT_SIZE = 2
 
-	if (DEBUG > 0) print *, "Starting parse_obj()"
+	if (DEBUG > -1) print *, "Starting parse_obj()"
 
 	if (DEBUG > 0) print *, "matching LBRACE_TOKEN"
 	call lexer%match(LBRACE_TOKEN)
 	obj%type = OBJ_TYPE
 
 	! Initialize hash map storage
-	allocate(obj%keys(2))
-	allocate(obj%vals(2))
+	allocate(obj%keys(INIT_SIZE))
+	allocate(obj%vals(INIT_SIZE))
 	obj%nkeys = 0
 
 	! TODO: pass json container to control whether to allocate idx or not based
 	! on hashed_order
-	obj%idx = new_i64_vec()
+	!obj%idx = new_i64_vec()
+	allocate(obj%idx(INIT_SIZE))
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -732,7 +736,7 @@ subroutine parse_obj(lexer, obj)
 		end select
 	end do
 
-	if (DEBUG > 0) then
+	if (DEBUG > -1) then
 		write(*,*) "Finished parse_obj(), nkeys = "//to_str(obj%nkeys)
 	end if
 
@@ -743,7 +747,8 @@ subroutine set_map(obj, key, val)
 	character(len=*), intent(in) :: key
 	type(val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
-	integer(kind=8) :: i, n, n0
+	integer(kind=8) :: i, ii, n, n0, old_nkeys
+	integer(kind=8), allocatable :: old_idx(:)
 	type(str_t), allocatable :: old_keys(:)
 	type(val_t), allocatable :: old_vals(:)
 
@@ -751,19 +756,33 @@ subroutine set_map(obj, key, val)
 	if (obj%nkeys * 2 >= n0) then
 		! Resize the entries array if load factor exceeds 0.5
 		n = n0 * 2
+		old_nkeys = obj%nkeys
 		call move_alloc(obj%keys, old_keys)
 		call move_alloc(obj%vals, old_vals)
 		allocate(obj%keys(n))
 		allocate(obj%vals(n))
 		obj%nkeys = 0
-		obj%idx = new_i64_vec()  ! TODO: just manually manage idx growth if we have to do it here anyway
-		do i = 1, n0
-			if (allocated(old_keys(i)%str)) then
-				call set_map_core(obj, old_keys(i)%str, old_vals(i))
-			end if
+
+		! Just manually manage idx growth if we have to do it here anyway.
+		! Otherwise it could be an i64_vec_t
+		!deallocate(obj%idx)
+		call move_alloc(obj%idx, old_idx)
+		allocate(obj%idx(n))
+		!obj%idx = new_i64_vec()  
+
+		do ii = 1, old_nkeys
+			i = old_idx(ii)
+			call set_map_core(obj, old_keys(i)%str, old_vals(i))
 		end do
-		deallocate(old_keys)
+		!do i = 1, n0
+		!	if (allocated(old_keys(i)%str)) then  ! could avoid this check by iterating only over obj%idx(:)
+		!		call set_map_core(obj, old_keys(i)%str, old_vals(i))
+		!	end if
+		!end do
+
+		deallocate(old_idx)
 		deallocate(old_vals)
+		deallocate(old_keys)
 	end if
 	call set_map_core(obj, key, val)
 
@@ -793,7 +812,8 @@ subroutine set_map_core(obj, key, val)
 			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
 			call move_val(val, obj%vals(idx))
 			obj%nkeys = obj%nkeys + 1
-			call obj%idx%push(idx)
+			!call obj%idx%push(idx)
+			obj%idx( obj%nkeys ) = idx
 			print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
@@ -823,6 +843,10 @@ subroutine move_val(src, dst)
 		dst%nkeys = src%nkeys
 		call move_alloc(src%keys, dst%keys)
 		call move_alloc(src%vals, dst%vals)
+
+		call move_alloc(src%idx , dst%idx)
+		!call move_alloc(src%idx%vec, dst%idx%vec)
+
 	case (ARR_TYPE)
 		call panic("array move_val not implemented yet")  ! TODO
 	case default
