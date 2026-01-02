@@ -570,20 +570,50 @@ function json_to_str(this) result(str)
 	this%indent_level = 0
 	str = val_to_str(this, this%root)
 end function json_to_str
-	
+
+recursive function keyval_to_str(json, obj, i, indent) result(str)
+	type(json_t), intent(inout) :: json
+	type(val_t), intent(in) :: obj
+	integer(kind=8), intent(in) :: i
+	character(len=*), intent(in) :: indent
+	character(len = :), allocatable :: str
+	!********
+	character(len=:), allocatable :: key_str, val_str
+	type(str_builder_t) :: sb
+
+	!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
+
+	sb = new_str_builder()
+	key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
+	val_str = val_to_str(json, obj%vals(i))
+	if (.not. json%compact) call sb%push(indent)
+	call sb%push(key_str//":")
+	if (.not. json%compact) call sb%push(" ")
+	call sb%push(val_str)
+
+	!! Output gets weirdly truncated if you do this without the helper variables,
+	!! no idea why. Looks like a bug in str builder that doesn't copy/realloc
+	!! correctly, but I'm pretty sure I've ruled that out.  This is way more
+	!! readable with helper vars anyway
+	!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
+
+	call sb%push(",")
+	if (.not. json%compact) call sb%push(LINE_FEED)
+	str = sb%trim()
+
+end function keyval_to_str
+
 recursive function obj_to_str(json, obj) result(str)
 	type(json_t), intent(inout) :: json
 	type(val_t), intent(in) :: obj
 	character(len = :), allocatable :: str
 	!********
-	character(len=:), allocatable :: key_str, val_str, indent
+	character(len=:), allocatable :: indent
 	integer(kind=8) :: i, ii
 	type(str_builder_t) :: sb
 
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
-
-	! TODO: add up an incrementor and compare to nkeys to decide when to omit last trailing comma
 
 	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
 
@@ -593,47 +623,19 @@ recursive function obj_to_str(json, obj) result(str)
 	json%indent_level = json%indent_level + 1
 	indent = repeat(json%indent, json%indent_level)
 
-	! TODO: dry these loops
 	if (json%hashed_order) then
 		do i = 1, size(obj%keys)
+			! TODO: add up an incrementor and compare to nkeys to decide when to
+			! omit last trailing comma
 			if (allocated(obj%keys(i)%str)) then
-
-				!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
-
-				key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
-				val_str = val_to_str(json, obj%vals(i))
-				if (.not. json%compact) call sb%push(indent)
-				call sb%push(key_str//":")
-				if (.not. json%compact) call sb%push(" ")
-				call sb%push(val_str)
-
-				!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
-				!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
-
-				call sb%push(",")
-				if (.not. json%compact) call sb%push(LINE_FEED)
-
+				call sb%push(keyval_to_str(json, obj, i, indent))
 			end if
 		end do
 	else
 		do ii = 1, obj%nkeys
+			! TODO: omit trailing comma -- trivial for this case
 			i = obj%idx(ii)
-
-				!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
-
-				key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
-				val_str = val_to_str(json, obj%vals(i))
-				if (.not. json%compact) call sb%push(indent)
-				call sb%push(key_str//":")
-				if (.not. json%compact) call sb%push(" ")
-				call sb%push(val_str)
-
-				!! Output gets weirdly truncated if you do this without the helper variables, no idea why. Looks like a bug in str builder that doesn't copy/realloc correctly, but I'm pretty sure I've ruled that out.  This is way more readable with helper vars anyway
-				!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
-
-				call sb%push(",")
-				if (.not. json%compact) call sb%push(LINE_FEED)
-
+			call sb%push(keyval_to_str(json, obj, i, indent))
 		end do
 	end if
 
