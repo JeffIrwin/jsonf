@@ -97,12 +97,12 @@ module jsonf
 		character(len=:), allocatable :: text
 		integer(kind=8) :: pos
 		type(str_vec_t) :: diagnostics
-		type(token_t) :: current_token, previous_token, next_token, peek2_token
+
+		! Could add more lookaheads if needed, i.e. next_token and peek2_token
+		type(token_t) :: current_token, previous_token
 		logical :: &
-			has_currrent_token = .false., &
-			has_previous_token = .false., &
-			has_next_token    = .false., &
-			has_peek2_token   = .false.
+			has_current_token = .false., &
+			has_previous_token = .false.
 
 		contains
 			procedure :: &
@@ -142,32 +142,26 @@ character function lexer_current(lexer)
 end function lexer_current
 
 subroutine lexer_next(lexer)
+	! Advance to the next non-whitespace token
 	class(lexer_t), intent(inout) :: lexer
 	!********
-
-	!! Invalidate current token so that next call to current() gets a new one
-	!lexer%has_currrent_token = .false.
-
 	lexer%previous_token = lexer%current_token
-
 	lexer%current_token = lexer%lex()
 	do while (lexer%current_token%kind == WHITESPACE_TOKEN)
 		lexer%current_token = lexer%lex()
 		if (lexer%current_token%kind == EOF_TOKEN) exit
 	end do
-
 end subroutine lexer_next
 
 integer function lexer_current_kind(lexer)
 	class(lexer_t) :: lexer
 	type(token_t) :: token
 
-	!token = lexer%lex()
-	if (lexer%has_currrent_token) then
+	if (lexer%has_current_token) then
 		lexer%current_token = lexer%current_token
 	else
 		lexer%current_token = lexer%lex()
-		lexer%has_currrent_token = .true.
+		lexer%has_current_token = .true.
 	end if
 	lexer_current_kind = lexer%current_token%kind
 
@@ -457,35 +451,14 @@ subroutine parse_json(json, str)
 	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: str
 	!********
-	integer(kind=8) :: pos
 	type(lexer_t) :: lexer
 	type(token_t) :: token
 	type(token_vec_t) :: tokens
 
-	!! Lex and get an array of tokens
-	!tokens = new_token_vec()
 	lexer = new_lexer(str, "<dummy-filename>")
-	!do
-	!	token = lexer%lex()
-
-	!	if (token%kind /= WHITESPACE_TOKEN .and. &
-	!	    token%kind /= BAD_TOKEN) then
-	!		call tokens%push(token)
-	!	end if
-
-	!	if (token%kind == EOF_TOKEN) exit
-	!end do
-	!call tokens%trim()
-	!print *, 'tokens%len_ = ', tokens%len_
-	!if (DEBUG > 0) then
-	!	write(*,*) tokens_to_str(tokens)
-	!end if
-
 	write(*,*) "Parsing JSON tokens ..."
 
-	! Maybe a parser type would be useful to encapsulate pos and diagnostics
-	pos = 1
-	!call parse_root(json%root, tokens, pos)
+	! Maybe a parser type would be useful to encapsulate diagnostics. Or just put them in the lexer to simplify things?
 	call parse_root(lexer, json%root)
 
 end subroutine parse_json
@@ -493,12 +466,9 @@ end subroutine parse_json
 subroutine parse_root(lexer, json)
 	type(lexer_t), intent(inout) :: lexer
 	type(val_t), intent(out) :: json
-	!type(token_vec_t) :: tokens
-	!integer(kind=8), intent(inout) :: pos
 	!********
 	integer :: kind
 	print *, "Starting parse_root()"
-	!print *, "pos = ", pos
 	do
 		kind = lexer%current_kind()
 		print *, "tok kind = ", kind_name(kind)
@@ -518,19 +488,19 @@ subroutine parse_root(lexer, json)
 end subroutine parse_root
 
 subroutine match(lexer, kind)
-	! TODO: return a token as a fn? Might be useful to have the matched token's position in case of later diagnostics
+	! TODO: return a token as a fn? Might be useful to have the matched token's position in case of later diagnostics. Or could just use lexer%previous_token in caller
 	type(lexer_t), intent(inout) :: lexer
 	integer, intent(in) :: kind
 	!********
 	if (lexer%current_kind() == kind) then
-		!lexer%pos = lexer%pos + 1
 		call lexer%next()
 		return
 	end if
 
 	! Syntran just advances to the next token on mismatch. Does that have an advantage?
-	call panic("expected token of kind "//kind_name(kind)// &
-		", but got "//kind_name(lexer%current_kind()))
+	call panic("expected token of kind "// &
+		kind_name(kind)//", but got "// &
+		kind_name(lexer%current_kind()))
 
 end subroutine match
 
@@ -575,7 +545,6 @@ function obj_to_str(this) result(str_)
 	str_ = sb%trim()
 end function obj_to_str
 
-!subroutine parse_val(json, tokens, pos)
 subroutine parse_val(lexer, json)
 	type(lexer_t), intent(inout) :: lexer
 	type(val_t), intent(out) :: json
@@ -585,13 +554,10 @@ subroutine parse_val(lexer, json)
 		!print *, "value (string) = ", lexer%current_token%sca%str
 		json%type = STR_TYPE
 		json%sca = lexer%current_token%sca
-		!pos = pos + 1
 		call lexer%next()
 	case (I64_TOKEN)
-		!print *, "value (i64) = ", tokens%vec(pos)%sca%i64
 		json%type = I64_TYPE
 		json%sca = lexer%current_token%sca
-		!pos = pos + 1
 		call lexer%next()
 	case (LBRACE_TOKEN)
 		call parse_obj(lexer, json)
@@ -603,22 +569,17 @@ subroutine parse_val(lexer, json)
 	end select
 end subroutine parse_val
 
-!subroutine parse_obj(json, tokens, pos)
 subroutine parse_obj(lexer, json)
 	type(lexer_t), intent(inout) :: lexer
 	type(val_t), intent(out) :: json
-	!type(token_vec_t) :: tokens
-	!integer(kind=8), intent(inout) :: pos
 	!********
 	character(len=:), allocatable :: key
 	type(val_t) :: val
 
 	print *, "Starting parse_obj()"
-	!print *, "pos = ", pos
 
-	! TODO: make `match()` a class method
+	! TODO: make `match()` a lexer class method
 	print *, "matching LBRACE_TOKEN"
-	!call match(tokens, pos, LBRACE_TOKEN)
 	call match(lexer, LBRACE_TOKEN)
 	json%type = OBJ_TYPE
 
@@ -628,40 +589,31 @@ subroutine parse_obj(lexer, json)
 	json%nkey = 0
 
 	do
-		!if (tokens%vec(pos)%kind == RBRACE_TOKEN) then
 		if (lexer%current_kind() == RBRACE_TOKEN) then
 			! End of object
 			call lexer%next()
-			!pos = pos + 1
 			exit
 		end if
 
-		print *, "matching STR_TOKEN"
 		call match(lexer, STR_TOKEN)
-
-		!key = tokens%vec(pos-1)%sca%str
-		key = lexer%previous_token%sca%str ! TODO
-		print *, "key = ", key
+		key = lexer%previous_token%sca%str
+		!print *, "key = ", key
 
 		call match(lexer, COLON_TOKEN)
-		!call parse_val(val, tokens, pos) ! TODO
 		call parse_val(lexer, val)
-		print *, "val = ", val%to_str()
+		!print *, "val = ", val%to_str()
 
 		! Store key-value pair in json object
 		call set_map(json, key, val)
 
 		! Expect comma or end of object
-		!select case (tokens%vec(pos)%kind)
 		select case (lexer%current_kind())
 		case (COMMA_TOKEN)
 			! TODO: test trailing commas. Make them an error by default but provide option to allow
 			call lexer%next()
-			!pos = pos + 1
 		case (RBRACE_TOKEN)
 			! TODO: do we really need exit condition at top and bottom of loop? Make sure we handle empty objects
 			call lexer%next()
-			!pos = pos + 1
 			exit
 		case default
 			call panic("expected ',' or '}' after key-value pair in object")
