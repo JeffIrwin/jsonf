@@ -13,5 +13,5 @@ fpm install --prefix . --flag "${flags[@]}" --profile debug
 
 ./bin/jsonf -s '{"a123": 69, "x456": 420}'
 
-./bin/jsonf -s '{"a123": 69, "nested": {"p": 1337, "q": 9999}, "x456": 420}'
+./bin/jsonf -s '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}'
 

@@ -54,6 +54,7 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
+		! TODO: should maps also have an ordering index array, to preserve insertion order?  Not part of json standard but very helpful for consistent str/print output
 		integer(kind=8) :: nkey = 0
 		type(str_t), allocatable :: key(:)  ! TODO: rename to keys/vals? Singular seems confusing
 		type(val_t), allocatable :: val(:)
@@ -62,8 +63,7 @@ module jsonf
 
 		contains
 			procedure :: &
-				to_str => val_to_str, &
-				print  => print_val
+				to_str => val_to_str
 	end type val_t
 
 	type json_t
@@ -512,42 +512,18 @@ recursive function val_to_str(this) result(str)
 	class(val_t) :: this
 	character(len = :), allocatable :: str
 	!********
-	type(str_builder_t) :: sb
-	!sb = new_str_builder()
+	! Don't need a str_builder here since val_t is a single value
 	select case (this%type)
 	case (STR_TYPE)
-		! TODO: escape special chars (e.g. quotes) in string
-		str = '"'//this%sca%str//'"'
-		!call sb%push('"'//this%sca%str//'"')
-		!call sb%push("str: <"//this%sca%str//">")
+		str = quote(this%sca%str)
 	case (I64_TYPE)
 		str = to_str(this%sca%i64)
-		!call sb%push(to_str(this%sca%i64))
 	case (OBJ_TYPE)
 		str = obj_to_str(this)
-		!call sb%push(obj_to_str(this))
 	case default
 		call panic("val_to_str: unknown type "//kind_name(this%type))
 	end select
-	!str = sb%trim()
 end function val_to_str
-
-subroutine print_val(this)
-	class(val_t) :: this
-	!********
-	select case (this%type)
-	case (STR_TYPE)
-		write(*, "(a)") '"'//this%sca%str//'"'
-	case (I64_TYPE)
-		write(*, "(a)") to_str(this%sca%i64)
-	case (OBJ_TYPE)
-		!write(*, "(a)") obj_to_str(this)
-		call print_obj(this)
-	case default
-		call panic("print_val: unknown type "//kind_name(this%type))
-	end select
-
-end subroutine print_val
 
 subroutine write_json(this, filename, unit_)
 	class(json_t) :: this
@@ -579,12 +555,7 @@ subroutine print_json(this, msg)
 	if (present(msg)) then
 		write(*, "(a)") msg
 	end if
-	!print *, this%root%to_str()
-
-	!! TODO
-	!call write_json(this)
-	call this%root%print()
-
+	call write_json(this)
 end subroutine print_json
 
 function json_to_str(this) result(str)
@@ -595,61 +566,34 @@ function json_to_str(this) result(str)
 end function json_to_str
 
 recursive function obj_to_str(this) result(str)
+	! TODO: pass through a json_t object with indent level
 	class(val_t) :: this
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: key_str, val_str
 	integer(kind=8) :: i
-	!logical :: first
 	type(str_builder_t) :: sb
 
-	!print *, "starting obj_to_str()"
+	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
 
-	!sb = new_str_builder()
-	!call sb%push("{")
-	str = "{"
-	!first = .true.
+	! TODO: add up an incrementor and compare to nkey to decide when to omit last trailing comma
+
+	sb = new_str_builder()
+	call sb%push("{"//LINE_FEED)
 	do i = 1, size(this%key)
 		if (allocated(this%key(i)%str)) then
-			!if (.not. first) call sb%push(",")
-			!first = .false.
+			!write(ERROR_UNIT, *) "key = "//quote(this%key(i)%str)
 
-			!print *, "key = "//quote(this%key(i)%str)
-			write(ERROR_UNIT, *) "key = "//quote(this%key(i)%str)
-
-			!str = str//quote(this%key(i)%str)//": "//this%val(i)%to_str()//", "
-			!key_str = quote(this%key(i)%str)
-			key_str = '"'//this%key(i)%str//'"'
+			key_str = quote(this%key(i)%str)  ! TODO: quote escaping
 			val_str = this%val(i)%to_str()
-			str = str // key_str // ": " // val_str // ", "
-
-			!call sb%push(quote(this%key(i)%str)//": "//this%val(i)%to_str())
-			!!call sb%push(","//LINE_FEED)
-			!call sb%push(", ")
+			call sb%push(key_str//": "//val_str)
+			call sb%push(","//LINE_FEED)
 		end if
 	end do
-	str = str // "}"
-	!call sb%push("}")
-	!str = sb%trim()
+	call sb%push("}")
+	str = sb%trim()
 end function obj_to_str
-
-subroutine print_obj(this)
-	class(val_t) :: this
-	!********
-	integer(kind=8) :: i
-
-	write(*,*) "{"
-	do i = 1, size(this%key)
-		if (allocated(this%key(i)%str)) then
-			!write(*,*) "  key = "//quote(this%key(i)%str)// ", val = "
-			print *, this%key(i)%str//":"
-			call this%val(i)%print()
-		end if
-	end do
-	write(*,*) "}"
-
-end subroutine print_obj
 
 subroutine parse_val(lexer, json)
 	type(lexer_t), intent(inout) :: lexer

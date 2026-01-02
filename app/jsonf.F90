@@ -16,11 +16,7 @@ subroutine app_echo_file(filename)
 
 	write(*,*) "Reading JSON from file: "//quote(filename)
 	call json%read_file(filename)
-
-	!! TODO
-	!call json%print("JSON content from file:")
-	out_str = json%to_str()
-	write(*,*) "JSON content from file:"//LINE_FEED//out_str
+	call json%print("JSON content from file:")
 
 end subroutine app_echo_file
 
@@ -32,13 +28,8 @@ subroutine app_echo_str(str)
 	write(*,*) "Reading JSON from string:"//LINE_FEED//"<<<"//str//">>>"
 	call json%read_str(str)
 
-	!! TODO
 	call json%print("JSON content from string:")
-	!out_str = json%to_str()
-	!write(*, '(a)') "JSON content from string:"
-	!write(*, "(a)") " "//out_str
-	!print *, out_str
-	call json%write("junk.json")
+	!call json%write("junk.json")
 
 end subroutine app_echo_str
 
