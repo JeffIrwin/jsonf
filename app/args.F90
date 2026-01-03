@@ -14,11 +14,13 @@ module jsonf__args
 			first_duplicate = .false., &
 			quiet           = .false., &
 			tokens          = .false., &
+			has_pointer     = .false., &
 			has_str         = .false., &
 			has_filename    = .false.
 
 		character(len=:), allocatable :: &
 			filename, &
+			pointer, &
 			str
 
 	end type args_t
@@ -88,6 +90,11 @@ function parse_args() result(args)
 
 		case ("-f", "--first-dup", "--first-duplicate")
 			args%first_duplicate = .true.
+
+		case ("-p", "--pointer")
+			i = i + 1
+			args%has_pointer = .true.
+			args%pointer = get_arg(i)
 
 		case ("-s", "--str", "--string")
 			! Beware, fpm removes quotes from *inside* of cmd args, e.g.

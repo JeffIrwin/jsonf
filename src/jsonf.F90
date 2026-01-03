@@ -5,6 +5,7 @@ module jsonf
 	implicit none
 
 	! TODO:
+	! - test empty str keys
 	! - add bools, floats, and null
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
@@ -91,6 +92,9 @@ module jsonf
 		integer(kind=4), allocatable :: idx(:)    ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
+		contains
+			procedure, pass(dst) :: copy => copy_val
+			generic, public :: assignment(=) => copy
 	end type json_val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
@@ -111,6 +115,7 @@ module jsonf
 
 		contains
 			procedure :: &
+				get_val   => get_val_json, &
 				write     => write_json, &
 				print     => print_json, &
 				to_str    => json_to_str, &
@@ -666,6 +671,72 @@ subroutine parse_val(json, lexer, val)
 	end select
 end subroutine parse_val
 
+function get_val_json(json, ptr) result(val)
+	class(json_t), intent(in) :: json
+	character(len=*), intent(in) :: ptr
+	type(json_val_t) :: val
+	!type(json_val_t), pointer :: pval
+	!********
+	character(len=:), allocatable :: token
+	integer :: i
+	logical :: found
+	type(json_val_t) :: tmp_val
+	type(str_vec_t) :: tokens
+
+	!val = json%root  ! crashes w/o copy ctor
+	call copy_val(val, json%root)
+	!pval = json%root
+
+	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
+	do i = 1, i32(tokens%len)
+		token = tokens%vec(i)%str
+		print *, "token = "//quote(token)
+		select case (val%type)
+		case (ARR_TYPE)
+			call panic("array type not implemented in get_val_json()")
+		case (OBJ_TYPE)
+			print *, "obj type"
+
+			! I think if we use recursion, we might be able to avoid some val
+			! copies, except for the final return val to the actual caller
+
+			!call set_map(json, obj, key, val)
+			print *, "copying tmp val ..."
+			call copy_val(tmp_val, val)
+			print *, "getting map ..."
+			call get_map(json, tmp_val, token, val, found)
+			print *, "done"
+
+		case default
+			call panic("bad type in get_val_json()")
+		end select
+	end do
+	print *, "val i64 = "//to_str(val%sca%i64)
+	print *, "finished get_val_json()"
+
+	!! Rosetta code:  https://rosettacode.org/wiki/JSON_pointer
+	! set the current node to the document root
+	! FOR each token in the pointer
+	!   decode the token
+	!   IF the current node is an array
+	!     IF the token is a string representation of an array index AND the index is in range
+	!       set the current node to node[index]
+	!     ELSE
+	!       error condition
+	!     ENDIF
+	!   ELSE IF the current node is an object
+	!     IF the current node has a property matching token
+	!       set the current node to node[token]
+	!     ELSE
+	!       error condition
+	!     ENDIF
+	!   ELSE
+	!     error condition
+	!   ENDIF
+	! ENDFOR
+
+end function get_val_json
+
 subroutine parse_obj(json, lexer, obj)
 	type(json_t), intent(inout) :: json
 	type(lexer_t), intent(inout) :: lexer
@@ -731,6 +802,56 @@ subroutine parse_obj(json, lexer, obj)
 	end if
 
 end subroutine parse_obj
+
+!call get_map(json, tmp_val, token, val, found)
+subroutine get_map(json, obj, key, val, found)
+	!type(json_t), intent(inout) :: json
+	type(json_t), intent(in) :: json
+	!type(json_val_t), intent(inout) :: obj
+	type(json_val_t), intent(in) :: obj
+	character(len=*), intent(in) :: key
+	!type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
+	type(json_val_t), intent(out) :: val  ! intent out because it gets moved instead of copied
+	logical, intent(out) :: found
+	!********
+	integer(kind=4) :: hash, idx, n
+
+	found = .false.
+	hash = djb2_hash(key)
+	n = size(obj%keys)
+	idx = modulo(hash, n) + 1
+
+	do
+		if (.not. allocated(obj%keys(idx)%str)) then
+			! Empty slot, key not found
+			exit
+		else if (is_str_eq(obj%keys(idx)%str, key)) then
+			! Key found
+			call copy_val(val, obj%vals(idx))
+			found = .true.
+			exit
+		else
+			! Collision, try next index (linear probing)
+			idx = modulo(idx, n) + 1
+		end if
+	end do
+	!do
+	!	if (.not. allocated(this%entries(idx)%key)) then
+	!		! Empty slot, key not found
+	!		exit
+	!	else if (is_str_eq(this%entries(idx)%key, key)) then
+	!		! Key found
+	!		val = this%entries(idx)%val
+	!		found_ = .true.
+	!		exit
+	!	else
+	!		! Collision, try next index (linear probing)
+	!		idx = modulo(idx, size(this%entries)) + 1
+	!	end if
+	!end do
+	!if (present(found)) found = found_
+
+end subroutine get_map
 
 subroutine set_map(json, obj, key, val)
 	type(json_t), intent(inout) :: json
@@ -812,7 +933,7 @@ subroutine set_map_core(json, obj, key, val)
 			exit
 		else
 			! Collision, try next index (linear probing)
-			idx = mod(idx, n) + 1
+			idx = modulo(idx, n) + 1
 		end if
 	end do
 
@@ -820,8 +941,8 @@ end subroutine set_map_core
 
 subroutine move_val(src, dst)
 	! A copy constructor could be added if needed, but it's best to avoid for performance
-	type(json_val_t), intent(out) :: dst
 	type(json_val_t), intent(inout) :: src
+	type(json_val_t), intent(out) :: dst
 	!********
 	dst%type = src%type
 	select case (src%type)
@@ -840,6 +961,32 @@ subroutine move_val(src, dst)
 	end select
 
 end subroutine move_val
+
+subroutine copy_val(dst, src)
+	! TODO: try to avoid
+	class(json_val_t), intent(in) :: src
+	class(json_val_t), intent(out) :: dst
+	!********
+	dst%type = src%type
+	select case (src%type)
+	case (OBJ_TYPE)
+		dst%nkeys = src%nkeys
+		!call move_alloc(src%keys , dst%keys)
+		!call move_alloc(src%vals , dst%vals)
+		!call move_alloc(src%idx  , dst%idx)
+		dst%keys = src%keys
+		dst%vals = src%vals ! TODO: recurse?
+		dst%idx  = src%idx
+
+	case (ARR_TYPE)
+		call panic("array move_val not implemented yet")  ! TODO
+
+	case default
+		! Lightweight scalars are actually just copied
+		dst%sca = src%sca
+	end select
+
+end subroutine copy_val
 
 function new_file_stream(filename) result(stream)
 	character(len=*), intent(in) :: filename
