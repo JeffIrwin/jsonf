@@ -6,8 +6,9 @@ author = "Jeff Irwin"
 maintainer = "jirwin505@gmail.com"
 copyright = "Copyright 2025, Jeff Irwin"
 
-[executable]
+[[executable]]
 name = "jsonf"
+source-dir = "app"
 
 [build]
 auto-executables = true

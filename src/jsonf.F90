@@ -903,20 +903,19 @@ subroutine print_stream_tokens(stream)
 	sb = new_str_builder()
 	call sb%push('tokens = '//line_feed//'<<<'//line_feed)
 	lexer = new_lexer(stream)
-	!do while (.not. lexer%stream%is_eof)
 	do
 		token = lexer%current_token
-		!print *, "kind = ", token%kind
 		call sb%push("    " &
 			//"<"//          token%text  //"> " &
 			//"<"//kind_name(token%kind )//">"  &
 			//line_feed &
 		)
-		if (lexer%stream%is_eof) exit
+		! This prints the eof token, whereas checking %is_eof exits one token earlier
+		if (token%kind == EOF_TOKEN) exit
 		call lexer%next_token()
 	end do
 	call sb%push(">>>"//line_feed)
-	print *, sb%trim()
+	write(*, "(a)") sb%trim()
 
 end subroutine print_stream_tokens
 

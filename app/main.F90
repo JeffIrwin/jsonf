@@ -55,7 +55,7 @@ end subroutine app_echo_str
 
 end module jsonf__app
 
-program test
+program main
 
 	use jsonf__app
 	implicit none
@@ -77,5 +77,5 @@ program test
 
 	call jsonf_exit(EXIT_SUCCESS, args%quiet)
 
-end program test
+end program main
 
