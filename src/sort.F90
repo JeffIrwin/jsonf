@@ -101,7 +101,7 @@ function partition_i32(a, idx, lo, hi) result(ans)
 
 	! Median of three pivot
 	!
-	! TODO: claude noted these should be independent if's, not else-if's. If it's legit, port it to other sort implementations
+	! TODO: claude noted these should be independent if's, not else-if's.  Port it to other sort implementations
 	mid = (lo + hi) / 2
 	if (a(idx(mid)) < a(idx(lo))) then
 		idx([lo, mid]) = idx([mid, lo])

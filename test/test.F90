@@ -199,20 +199,83 @@ logical function is_sorted_i32(v) result(sorted)
 	sorted = all(v(1:n-1) <= v(2:n))
 end function is_sorted_i32
 
+subroutine seed_rng_zeros()
+	implicit none
+	integer :: seed_size
+	integer, allocatable :: seed(:)
+
+	! Get the size of the seed array
+	call random_seed(size=seed_size)
+
+	! Allocate and initialize seed array with zeros
+	allocate(seed(seed_size))
+	seed = 0
+
+	! Set the seed
+	call random_seed(put=seed)
+
+	! Clean up
+	deallocate(seed)
+
+end subroutine seed_rng_zeros
+
+! TODO: blarg? utils maybe?
+function rand_vec_i32(n, min_val, max_val) result(vec)
+	integer, intent(in) :: n          ! Length of vector
+	integer, intent(in) :: min_val    ! Minimum value (inclusive)
+	integer, intent(in) :: max_val    ! Maximum value (inclusive)
+	integer, dimension(n) :: vec      ! Output vector
+	!********
+	double precision :: rand_val      ! Single random value
+	integer :: i
+	do i = 1, n
+		! Generate random integers one at a time
+		call random_number(rand_val)
+		vec(i) = int(min_val + floor(rand_val * (int(max_val,8) - min_val + 1), 8), 4)
+	end do
+end function rand_vec_i32
+
 subroutine test_sort(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
+	integer :: i
 	integer, allocatable :: v(:)
 
 	v = [72, 16, 17, 3, 53, 99, 1]
 	call sort(v)
-	print *, "v = ", v
+	!print *, "v = ", v
 	TEST(is_sorted(v), "test_sort 1", nfail, ntot)
 
 	v = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -2, -3]
 	call sort(v)
-	print *, "v = ", v
+	!print *, "v = ", v
 	TEST(is_sorted(v), "test_sort 2", nfail, ntot)
+
+	! Fuzz tests
+
+	! Large size and small range -- lots of duplicate values
+	v = rand_vec_i32(100, 0, 10)
+	call sort(v)
+	!print *, "v = ", v
+	TEST(is_sorted(v), "test_sort 3", nfail, ntot)
+
+	! Small size and large range -- *probably* unique values
+	v = rand_vec_i32(10, 0, 100)
+	call sort(v)
+	!print *, "v = ", v
+	TEST(is_sorted(v), "test_sort 4", nfail, ntot)
+
+	do i = 1, 100
+		v = rand_vec_i32(200, -2000000000, 2000000000)
+		call sort(v)
+		!print *, "v = ", v
+		TEST(is_sorted(v), "test_sort fuzz", nfail, ntot)
+
+		v = rand_vec_i32(301, -200, 200)
+		call sort(v)
+		!print *, "v = ", v
+		TEST(is_sorted(v), "test_sort fuzz", nfail, ntot)
+	end do
 
 end subroutine  test_sort
 
@@ -290,10 +353,13 @@ program test
 	use jsonf__test
 	implicit none
 	integer :: nfail, ntot
-	
+
 	write(*,*) fg_bright_magenta//"Starting jsonf unit tests"//color_reset
 	nfail = 0
 	ntot = 0
+
+	! Do consistent fuzz tests every time
+	call seed_rng_zeros()
 
 	call test_sort(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
