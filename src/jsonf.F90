@@ -672,25 +672,29 @@ subroutine parse_val(json, lexer, val)
 end subroutine parse_val
 
 function get_val_json(json, ptr) result(val)
+!recursive function get_val_json(json, ptr) result(val)
 	class(json_t), intent(in) :: json
 	character(len=*), intent(in) :: ptr
 	type(json_val_t) :: val
-	!type(json_val_t), pointer :: pval
 	!********
 	character(len=:), allocatable :: token
 	integer :: i
 	logical :: found
+	!type(json_val_t), pointer :: pval, ptmp
 	type(json_val_t) :: tmp_val
 	type(str_vec_t) :: tokens
 
-	!val = json%root  ! crashes w/o copy ctor
-	call copy_val(val, json%root)
+	print *, "*********************************"
+	print *, "starting get_val_json()"
+
+	val = json%root  ! crashes w/o copy ctor
+	!call copy_val(val, json%root)
 	!pval = json%root
 
 	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
 	do i = 1, i32(tokens%len)
 		token = tokens%vec(i)%str
-		!print *, "token = "//quote(token)
+		print *, "token = "//quote(token)
 		select case (val%type)
 		case (ARR_TYPE)
 			call panic("array type not implemented in get_val_json()")
@@ -701,9 +705,12 @@ function get_val_json(json, ptr) result(val)
 			! copies, except for the final return val to the actual caller
 
 			!print *, "copying tmp val ..."
-			call copy_val(tmp_val, val)
+			!call copy_val(tmp_val, val)
+			call move_val(val, tmp_val)
+			!ptmp = pval
 			!print *, "getting map ..."
 			call get_map(json, tmp_val, token, val, found)
+			!call get_map(json, ptmp, token, pval, found)
 			!print *, "done"
 			if (.not. found) then
 				call panic("key "//quote(token)//" not found")
