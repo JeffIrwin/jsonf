@@ -228,10 +228,11 @@ function count_lines(filename) result(nline)
 	open(newunit = iu, file = filename, action = "read")
 	do
 		read(iu, "(a)", iostat = io) c
-		! TODO: test on file with blank lines. May need to check io /= iostat_end
+		! TODO: test on file with blank lines. May need to check io /= IOSTAT_END
 		if (io /= EXIT_SUCCESS) exit
 		nline = nline + 1
 	end do
+	close(iu)
 
 end function count_lines
 
@@ -260,6 +261,7 @@ function read_mat_char(filename) result(mat)
 		line = read_line(iu)
 	end do
 	!print *, "mat = ", mat
+	close(iu)
 
 end function read_mat_char
 
@@ -332,15 +334,15 @@ function read_line(iu, iostat) result(str)
 		!print *, "io = ", io
 		!print *, "c = """, c, """"
 
-		if (io == iostat_end) exit
-		if (io == iostat_eor) exit
+		if (io == IOSTAT_END) exit
+		if (io == IOSTAT_EOR) exit
 
 		! In syntran, calling readln() one more time after the initial EOF
 		! causes an infinite loop for some reason without this
 		if (io /= 0) exit
 
-		!if (c == carriage_return) exit
-		!if (c == line_feed) exit
+		!if (c == CARRIAGE_RETURN) exit
+		!if (c == LINE_FEED) exit
 
 		call sb%push(c)
 
@@ -350,8 +352,8 @@ function read_line(iu, iostat) result(str)
 	!print *, "sb  = ", sb%str( 1: sb%len )
 	!print *, "str = ", str
 
-	!if (io == iostat_end .or. io == iostat_eor) io = 0
-	if (io == iostat_eor) io = 0
+	!if (io == IOSTAT_END .or. io == IOSTAT_EOR) io = 0
+	if (io == IOSTAT_EOR) io = 0
 	if (present(iostat)) iostat = io
 
 end function read_line
@@ -862,7 +864,7 @@ logical function is_whitespace(c)
 
 	character, intent(in) :: c
 
-	is_whitespace = any(c == [tab, line_feed, vert_tab, carriage_return, ' '])
+	is_whitespace = any(c == [TAB, LINE_FEED, VERT_TAB, CARRIAGE_RETURN, ' '])
 
 end function is_whitespace
 
