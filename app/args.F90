@@ -8,13 +8,14 @@ module jsonf__args
 	type args_t
 
 		logical :: &
-			help         = .false., &
-			compact      = .false., &
-			no_dup       = .false., &
-			quiet        = .false., &
-			tokens       = .false., &
-			has_str      = .false., &
-			has_filename = .false.
+			help            = .false., &
+			compact         = .false., &
+			no_dup          = .false., &
+			first_duplicate = .false., &
+			quiet           = .false., &
+			tokens          = .false., &
+			has_str         = .false., &
+			has_filename    = .false.
 
 		character(len=:), allocatable :: &
 			filename, &
@@ -85,6 +86,9 @@ function parse_args() result(args)
 		case ("-d", "--no-dup", "--no-duplicate-keys")
 			args%no_dup = .true.
 
+		case ("-f", "--first-dup", "--first-duplicate")
+			args%first_duplicate = .true.
+
 		case ("-s", "--str", "--string")
 			! Beware, fpm removes quotes from *inside* of cmd args, e.g.
 			!
@@ -145,17 +149,19 @@ function parse_args() result(args)
 		write(*,*) "    jsonf (-s | --string) STRING"
 		write(*,*) "    jsonf -c | --compact"
 		write(*,*) "    jsonf -d | --no-dup"
+		write(*,*) "    jsonf -f | --first-dup"
 		write(*,*) "    jsonf -q | --quiet"
 		write(*,*) "    jsonf -t | --tokens"
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
-		write(*,*) "    --help     Show this help"
-		write(*,*) "    FILE.json  Input JSON filename"
-		write(*,*) "    --string   Input JSON string"
-		write(*,*) "    --compact  Format compactly without whitespace"
-		write(*,*) "    --no-dup   Do not allow duplicate keys"
-		write(*,*) "    --quiet    Decrease log verbosity"
-		write(*,*) "    --tokens   Dump tokens without parsing JSON"
+		write(*,*) "    --help       Show this help"
+		write(*,*) "    FILE.json    Input JSON filename"
+		write(*,*) "    --string     Input JSON string"
+		write(*,*) "    --compact    Format compactly without whitespace"
+		write(*,*) "    --first-dup  Keep first duplicate key, default last"
+		write(*,*) "    --no-dup     Do not allow duplicate keys"
+		write(*,*) "    --quiet      Decrease log verbosity"
+		write(*,*) "    --tokens     Dump tokens without parsing JSON"
 		write(*,*)
 
 		if (error) call panic("")

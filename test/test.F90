@@ -97,12 +97,12 @@ subroutine test_in3(nfail, ntot)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
 	expect = '{"a":1,"b":{"a":11,"b":{"a":111,"b":"here''s a \"string\"","c":333},"c":33,"d":44},"c":3,"d":4,"e":5}'
-	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+	TEST(is_str_eq(str_out, expect), "test_in3 1", nfail, ntot)
 
 end subroutine test_in3
 
 subroutine test_in4(nfail, ntot)
-	! With duplicate keys, the last value is retained and its order is correct
+	! With duplicate keys, the last value is retained by default and its order is correct
 	integer, intent(inout) :: nfail, ntot
 	!********
 	character(len=:), allocatable :: filename, str_out, expect
@@ -116,12 +116,19 @@ subroutine test_in4(nfail, ntot)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
 	expect = '{"a":1,"b":9999,"c":3}'
-	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+	TEST(is_str_eq(str_out, expect), "test_in4 1", nfail, ntot)
+
+	json%first_duplicate = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"a":1,"b":2,"c":3}'
+	TEST(is_str_eq(str_out, expect), "test_in4 2", nfail, ntot)
 
 end subroutine test_in4
 
 subroutine test_in5(nfail, ntot)
-	! With duplicate keys, the last value is retained and its order is correct
+	! Duplicate keys
 	!
 	! Similar to in4 but with more source duplicates
 	integer, intent(inout) :: nfail, ntot
@@ -137,12 +144,19 @@ subroutine test_in5(nfail, ntot)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
 	expect = '{"a":1111,"c":3333,"b":9999}'
-	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+	TEST(is_str_eq(str_out, expect), "test_in5 1", nfail, ntot)
+
+	json%first_duplicate = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"a":1,"c":20,"b":2}'
+	TEST(is_str_eq(str_out, expect), "test_in5 2", nfail, ntot)
 
 end subroutine test_in5
 
 subroutine test_in6(nfail, ntot)
-	! With duplicate keys, the last value is retained and its order is correct
+	! Duplicate keys
 	!
 	! A pathological case with 10 keys and 5 instances each, with randomly
 	! shuffled orders after the first instance
@@ -159,10 +173,17 @@ subroutine test_in6(nfail, ntot)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
 	expect = '{"0":0,"a":1000,"b":2000,"c":3000,"d":4000,"e":5000,"f":6000,"g":7000,"h":8000,"i":9000}'
-	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+	TEST(is_str_eq(str_out, expect), "test_in6 1", nfail, ntot)
 
 	!json%allow_duplicate_keys = .false.
 	!call json%read_file(filename)  ! error
+
+	json%first_duplicate = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"0":404,"a":404,"b":404,"c":404,"d":404,"e":404,"f":404,"g":404,"h":404,"i":404}'
+	TEST(is_str_eq(str_out, expect), "test_in6 2", nfail, ntot)
 
 end subroutine test_in6
 

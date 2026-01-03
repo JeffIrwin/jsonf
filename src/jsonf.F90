@@ -30,7 +30,7 @@ module jsonf
 	!   * lint-only or dry-run option
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
-	!   * stop-on-error on "assert"
+	!   * stop-on-error on "assert". need better error handling first
 	! - check json-fortran, jq, and other similar projects for features to add
 	! - test re-entry with re-using one object to load multiple JSON inputs in
 	!   sequence. might find bugs with things that need to be deallocated first
@@ -98,7 +98,9 @@ module jsonf
 		! JSON top-level type
 		type(json_val_t) :: root
 
-		logical :: allow_duplicate_keys = .true.
+		logical :: &
+			allow_duplicate_keys = .true., &
+			first_duplicate      = .false.
 
 		! String and print output formatting options
 		character(len=:), allocatable :: indent
@@ -605,22 +607,11 @@ recursive function obj_to_str(json, obj) result(str)
 	!********
 	character(len=:), allocatable :: indent
 	integer(kind=4) :: i, ii
-	logical, parameter :: last_dup = .true.
 	type(str_builder_t) :: sb
 
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
 	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
-
-	if (last_dup) then
-		! TODO: also set a flag when an actual duplicate is encountered in this
-		! obj. It may be allowed, but if most inputs have unique keys, we don't
-		! always need to sort
-		!
-		! Keeping the first dup instead of last would also simplify things --
-		! just don't overwrite the val in the first place when parsing, no
-		! sorting required
-	end if
 
 	sb = new_str_builder()
 	call sb%push("{")
@@ -807,7 +798,7 @@ subroutine set_map_core(json, obj, key, val)
 			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
 			call move_val(val, obj%vals(idx))
 			obj%nkeys = obj%nkeys + 1
-			obj%idx( obj%nkeys ) = idx  ! the first duplicate instance determines insertion order
+			obj%idx( obj%nkeys ) = idx  ! the first duplicate instance determines insertion index order
 			!print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
@@ -815,7 +806,9 @@ subroutine set_map_core(json, obj, key, val)
 			if (.not. json%allow_duplicate_keys) then
 				call panic("duplicate key "//quote(key))
 			end if
-			call move_val(val, obj%vals(idx))
+			if (.not. json%first_duplicate) then
+				call move_val(val, obj%vals(idx))
+			end if
 			exit
 		else
 			! Collision, try next index (linear probing)
