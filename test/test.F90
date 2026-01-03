@@ -43,13 +43,14 @@ subroutine test_in1(nfail, ntot)
 
 	str = read_file(filename)
 	!print *, "str = "//LINE_FEED//str
+
+	! Beware, this will break depending on the ordering, e.g. if djb2_hash() is
+	! ever modified
 	json%hashed_order = .true.
+
 	call json%read_str(str)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-
-	! TODO: this will break depending on the ordering, e.g. if djb2_hash() is
-	! ever modified
 	expect = &
 		'{' // LINE_FEED // &
 		'    "c": "my str",' // LINE_FEED // &
@@ -156,7 +157,7 @@ subroutine test_in6(nfail, ntot)
 	json%compact = .true.
 	call json%read_file(filename)
 	str_out = json%to_str()
-	print *, "str_out = ", str_out
+	!print *, "str_out = ", str_out
 	expect = '{"0":0,"a":1000,"b":2000,"c":3000,"d":4000,"e":5000,"f":6000,"g":7000,"h":8000,"i":9000}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
@@ -175,7 +176,6 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
 
-	! TODO: everything will break after trailing commas are removed
 	expect = &
 		'{'//LINE_FEED// &
 		'    "a": 1'//LINE_FEED// &
