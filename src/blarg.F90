@@ -16,8 +16,9 @@
 !>
 !>     https://github.com/JeffIrwin/numerical-analysis/blob/main/src/blarg.F90
 !>
-module blarg_m
+module jsonf__blarg
 
+	use jsonf__utils
 	implicit none
 
 	interface outer_product
@@ -397,7 +398,6 @@ end function triu_c64
 !===============================================================================
 
 function vstack_mat_vec(a, b, iostat) result(c)
-	use utils_m
 	double precision, intent(in) :: a(:,:), b(:)
 	double precision, allocatable :: c(:,:)
 	integer, optional, intent(out) :: iostat
@@ -429,7 +429,6 @@ end function vstack_mat_vec
 !********
 
 function vstack_mat_mat(a, b, iostat) result(c)
-	use utils_m
 	double precision, intent(in) :: a(:,:), b(:,:)
 	double precision, allocatable :: c(:,:)
 	integer, optional, intent(out) :: iostat
@@ -461,7 +460,6 @@ end function vstack_mat_mat
 
 function hstack_mat_mat(a, b, iostat) result(c)
 	! `hstack` and `vstack` are named after corresponding numpy functions
-	use utils_m
 	double precision, intent(in) :: a(:,:), b(:,:)
 	double precision, allocatable :: c(:,:)
 	integer, optional, intent(out) :: iostat
@@ -491,7 +489,6 @@ end function hstack_mat_mat
 !===============================================================================
 
 function hstack_mat_vec(a, b, iostat) result(c)
-	use utils_m
 	double precision, intent(in) :: a(:,:), b(:)
 	double precision, allocatable :: c(:,:)
 	integer, optional, intent(out) :: iostat
@@ -522,7 +519,6 @@ end function hstack_mat_vec
 !===============================================================================
 
 function hstack_mat_vec_i32(a, b, iostat) result(c)
-	use utils_m
 	integer, intent(in) :: a(:,:), b(:)
 	integer, allocatable :: c(:,:)
 	integer, optional, intent(out) :: iostat
@@ -742,5 +738,5 @@ end function range_f64_count
 
 !===============================================================================
 
-end module blarg_m
+end module jsonf__blarg
 

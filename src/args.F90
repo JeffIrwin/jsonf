@@ -1,13 +1,11 @@
-module args_m
 
-	use utils_m
+module jsonf__args
+
+	use jsonf__utils
 	implicit none
 
 	type args_t
 
-		! TODO:
-		! - stdin option with `-` arg
-		! - hashed_order option
 		logical :: &
 			help         = .false., &
 			!assert       = .false., &  ! assert stop on error?
@@ -157,5 +155,5 @@ end function parse_args
 
 !===============================================================================
 
-end module args_m
+end module jsonf__args
 

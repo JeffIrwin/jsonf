@@ -1,8 +1,8 @@
 
 module jsonf__app
 
-	use args_m
-	use utils_m
+	use jsonf__args
+	use jsonf__utils
 	use jsonf
 	implicit none
 

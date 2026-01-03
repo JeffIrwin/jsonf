@@ -13,9 +13,7 @@ copyright = "Copyright 2025, Jeff Irwin"
 auto-executables = true
 auto-tests = true
 auto-examples = true
-
-module-naming = false # TODO
-#module-naming = true
+module-naming = true
 
 [install]
 library = false

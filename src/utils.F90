@@ -1,5 +1,5 @@
 
-module utils_m
+module jsonf__utils
 
 	use iso_fortran_env
 	implicit none
@@ -876,7 +876,7 @@ end function quote
 
 !===============================================================================
 
-end module utils_m
+end module jsonf__utils
 
 !===============================================================================
 

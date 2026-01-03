@@ -1,8 +1,8 @@
 
-module sort_m
+module jsonf__sort
 
-	use blarg_m
-	use utils_m
+	use jsonf__blarg
+	use jsonf__utils
 	implicit none
 
 	interface sort
@@ -291,5 +291,5 @@ end function partition_i64
 
 !===============================================================================
 
-end module sort_m
+end module jsonf__sort
 

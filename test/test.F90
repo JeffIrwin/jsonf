@@ -1,7 +1,7 @@
 
 module jsonf__test
 
-	use utils_m
+	use jsonf__utils
 	use jsonf
 	implicit none
 

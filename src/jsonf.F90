@@ -1,7 +1,7 @@
 
 module jsonf
 
-	use utils_m
+	use jsonf__utils
 	implicit none
 
 	! TODO:
@@ -26,6 +26,9 @@ module jsonf
 	!   * unterminated strings
 	!   * invalid numbers, e.g. bad floats that look almost like a float
 	! - test nested arrays
+	! - cmd args:
+	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
+	!   * hashed_order option
 	! - check json-fortran, jq, and other similar projects for features to add
 	! - test re-entry with re-using one object to load multiple JSON inputs in
 	!   sequence. might find bugs with things that need to be deallocated first
@@ -222,7 +225,6 @@ function new_literal(type, bool, i64, f64, str) result(lit)
 end function new_literal
 
 function lex(lexer) result(token)
-	use utils_m
 	class(lexer_t) :: lexer
 	type(token_t) :: token
 	!********
@@ -595,7 +597,7 @@ recursive function keyval_to_str(json, obj, i, indent) result(str)
 end function keyval_to_str
 
 recursive function obj_to_str(json, obj) result(str)
-	use sort_m
+	use jsonf__sort
 	type(json_t), intent(inout) :: json
 	type(val_t), intent(in) :: obj
 	character(len = :), allocatable :: str
