@@ -27,7 +27,7 @@ module jsonf
 	!   * invalid numbers, e.g. bad floats that look almost like a float
 	! - test nested arrays
 	! - cmd args:
-	!   * print tokens option
+	!   * lint-only or dry-run option
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
 	!   * stop-on-error on "assert"
@@ -416,9 +416,7 @@ subroutine read_str_json(json, str)
 
 	! We have the whole str, but treat it as a stream for consistency with file
 	! streaming
-	stream%type = STR_STREAM
-	stream%str = str
-	stream%pos = 1
+	stream = new_str_stream(str)
 	call json%parse(stream)
 
 end subroutine read_str_json
