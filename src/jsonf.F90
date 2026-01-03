@@ -40,6 +40,8 @@ module jsonf
 	!   * note that hex literals can be part of a unicode sequence in JSON, but
 	!     numeric literals are never hex, octal, or binary
 	! - test escape sequences in strings
+	!   * \" done
+	!   * \n, \t, \\, \/, \b, \f, \r, \uXXXX TBD
 	! - test comments -- nonstandard but use "#" or another char if requested by some option
 	! - test diagnostics reporting line/column numbers
 
@@ -247,7 +249,7 @@ function lex(lexer) result(token)
 			call lexer%next_char()
 		end do
 		text = sb%trim()
-		token = new_token(whitespace_token, start, text)
+		token = new_token(WHITESPACE_TOKEN, start, text)
 		return
 	end if
 
@@ -791,7 +793,7 @@ subroutine set_map_core(obj, key, val)
 	character(len=*), intent(in) :: key
 	type(json_val_t), intent(inout) :: val
 	!********
-	integer(8) :: hash, idx, n
+	integer(kind=8) :: hash, idx, n
 
 	!print *, "set_map_core: key = "//quote(key)
 
@@ -959,7 +961,7 @@ end function kind_name
 function djb2_hash(str) result(hash)
 	! DJB2 hash function implementation
 	character(len=*), intent(in) :: str
-	integer(8) :: hash
+	integer(kind=8) :: hash
 	integer :: i
 
 	hash = 5381
