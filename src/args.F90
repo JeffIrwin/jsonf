@@ -120,7 +120,13 @@ function parse_args() result(args)
 		end select
 
 	end do
-	! TODO: error if filename .eqv. string are given
+	if (.not. args%has_filename .and. .not. args%has_str) then
+		error =.true.
+		write(*,*) ERROR_STR//"no input JSON filename or string given"
+	else if (args%has_filename .and. args%has_str) then
+		error =.true.
+		write(*,*) ERROR_STR//"both JSON filename and string given"
+	end if
 
 	!********
 

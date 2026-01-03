@@ -61,9 +61,6 @@ program test
 	else if (args%has_str) then
 		call app_echo_str(args)
 
-	else
-		! TODO: move this error to args. Log help msg
-		call panic("no input JSON filename or string given")
 	end if
 
 	call jsonf_exit(EXIT_SUCCESS, args%quiet)
