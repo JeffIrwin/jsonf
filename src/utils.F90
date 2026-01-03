@@ -610,7 +610,7 @@ end function mat_char_to_str
 
 subroutine panic(msg)
 	character(len = *), intent(in) :: msg
-	if (msg /= "") write(*,*) ERROR_STR//msg
+	if (msg /= "") write(*, "(a)") ERROR_STR//msg
 	call jsonf_exit(EXIT_FAILURE)
 end subroutine panic
 
@@ -623,7 +623,7 @@ subroutine jsonf_exit(exit_code, quiet)
 	quiet_ = .false.
 	if (present(quiet)) quiet_ = quiet
 	if (exit_code == EXIT_SUCCESS .and. .not. quiet_) then
-		write(*,*) fg_green//"Finished jsonf"//color_reset
+		write(*, "(a)") fg_green//"Finished jsonf"//color_reset
 	end if
 	call exit(exit_code)
 end subroutine jsonf_exit

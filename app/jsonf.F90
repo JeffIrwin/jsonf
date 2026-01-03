@@ -15,7 +15,7 @@ subroutine app_echo_file(args)
 
 	msg = ""
 	if (.not. args%quiet) then
-		write(*,*) "Reading JSON from file: "//quote(args%filename)
+		write(*, "(a)") "Reading JSON from file: "//quote(args%filename)
 		msg = "JSON content from file:"
 	end if
 	json%compact = args%compact
@@ -31,7 +31,7 @@ subroutine app_echo_str(args)
 
 	msg = ""
 	if (.not. args%quiet) then
-		write(*,*) "Reading JSON from string:"//LINE_FEED//"<<<"//args%str//">>>"
+		write(*, "(a)") "Reading JSON from string:"//LINE_FEED//"<<<"//args%str//">>>"
 		msg = "JSON content from string:"
 	end if
 	json%compact = args%compact
@@ -52,7 +52,7 @@ program test
 	args = parse_args()
 	
 	if (.not. args%quiet) then
-		write(*,*) fg_bright_magenta//"Starting jsonf "//get_jsonf_vers()//color_reset
+		write(*, "(a)") fg_bright_magenta//"Starting jsonf "//get_jsonf_vers()//color_reset
 	end if
 
 	if (args%has_filename) then
