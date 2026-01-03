@@ -64,7 +64,7 @@ program test
 	args = parse_args()
 	
 	if (.not. args%quiet) then
-		write(*, "(a)") fg_bright_magenta//"Starting jsonf "//get_jsonf_vers()//color_reset
+		write(*, "(a)") fg_bright_magenta//"jsonf "//get_jsonf_vers()//color_reset
 	end if
 
 	if (args%has_filename) then

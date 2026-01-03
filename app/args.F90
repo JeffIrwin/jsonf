@@ -2,6 +2,7 @@
 module jsonf__args
 
 	use jsonf__utils
+	use jsonf
 	implicit none
 
 	type args_t
@@ -121,7 +122,7 @@ function parse_args() result(args)
 		end select
 
 	end do
-	if (.not. args%has_filename .and. .not. args%has_str) then
+	if (.not. args%has_filename .and. .not. args%has_str .and. .not. args%help) then
 		error =.true.
 		write(*,*) ERROR_STR//"no input JSON filename or string given"
 	else if (args%has_filename .and. args%has_str) then
@@ -133,6 +134,7 @@ function parse_args() result(args)
 
 	if (error .or. args%help) then
 
+		write(*, "(a)") fg_bright_magenta//"jsonf "//get_jsonf_vers()//color_reset
 		write(*,*) fg_bold//"Usage:"//color_reset
 		write(*,*) "    jsonf -h | --help"
 		write(*,*) "    jsonf FILE.json"
