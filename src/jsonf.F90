@@ -81,11 +81,15 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
-		integer(kind=8) :: nkeys = 0, nvals = 0
+		integer(kind=4) :: nkeys = 0, nvals = 0
 		type(str_t), allocatable :: keys(:)
 		type(json_val_t), allocatable :: vals(:)
-		integer(kind=8), allocatable :: idx(:)  ! for consistent output of object hashmap members
-		integer(kind=8), allocatable :: place(:)  ! for consistent output of object hashmap members
+
+		! i32 should be ok. If a JSON object has 2 billion keys, it will be much
+		! more than 2 GB counting quotes and colons, even without whitespace and
+		! 1-char keys. Non-duplicate keys would have to be at least 4 or 5 chars
+		integer(kind=4), allocatable :: idx(:)    ! for consistent output of object hashmap members
+		integer(kind=4), allocatable :: place(:)  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
 	end type json_val_t
@@ -522,7 +526,6 @@ subroutine write_json(this, filename, unit_)
 	if (present(unit_)) then
 		unit__ = unit_
 	else if (present(filename)) then
-		!open(newunit = unit__, file = filename, action = "write", status = "replace")
 		open(newunit = unit__, file = filename, action = "write")
 	else
 		unit__ = OUTPUT_UNIT
@@ -619,9 +622,16 @@ recursive function obj_to_str(json, obj) result(str)
 		! Keeping the first dup instead of last would also simplify things --
 		! just don't overwrite the val in the first place when parsing, no
 		! sorting required
-		idx = sort_index64(obj%place(obj%idx(1: obj%nkeys)))
+
+		! TODO:
+		! - do we really need both idx and place arrays?
+		! - can we do less idx array copies by sorting a different array in-place?
+		! - pigeonhole instead of quick sort. we know the max val (obj%nvals)
+
+		idx = sort_index(obj%place(obj%idx(1: obj%nkeys)))
 		!write(ERROR_UNIT, *) "idx = ", idx
 		idx = obj%idx(idx)
+
 	else
 		! No sorting required here -- only if we keep the last duplicate
 		idx = obj%idx
@@ -701,7 +711,7 @@ subroutine parse_obj(lexer, obj)
 	obj%nkeys = 0
 
 	! TODO: pass json container to control whether to allocate idx or not based
-	! on hashed_order
+	! on hashed_order and first/last dup
 	allocate(obj%idx  (INIT_SIZE))
 	allocate(obj%place(INIT_SIZE))
 
@@ -749,7 +759,7 @@ subroutine set_map(obj, key, val)
 	type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
 	integer(kind=8) :: i, ii, n, n0, old_nkeys
-	integer(kind=8), allocatable :: old_idx(:), old_place(:)
+	integer(kind=4), allocatable :: old_idx(:), old_place(:)
 	type(str_t), allocatable :: old_keys(:)
 	type(json_val_t), allocatable :: old_vals(:)
 
@@ -791,7 +801,7 @@ subroutine set_map_core(obj, key, val)
 	character(len=*), intent(in) :: key
 	type(json_val_t), intent(inout) :: val
 	!********
-	integer(kind=8) :: hash, idx, n
+	integer(kind=4) :: hash, idx, n
 
 	!print *, "set_map_core: key = "//quote(key)
 
@@ -852,6 +862,7 @@ subroutine move_val(src, dst)
 		call panic("array move_val not implemented yet")  ! TODO
 
 	case default
+		! Lightweight scalars are actually just copied
 		dst%sca = src%sca
 	end select
 
@@ -958,7 +969,7 @@ end function kind_name
 function djb2_hash(str) result(hash)
 	! DJB2 hash function implementation
 	character(len=*), intent(in) :: str
-	integer(kind=8) :: hash
+	integer(kind=4) :: hash
 	integer :: i
 
 	hash = 5381
