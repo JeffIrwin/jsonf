@@ -81,7 +81,7 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
-		integer(kind=4) :: nkeys = 0, nvals = 0
+		integer(kind=4) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(json_val_t), allocatable :: vals(:)
 
@@ -602,16 +602,13 @@ recursive function obj_to_str(json, obj) result(str)
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: indent
-	integer(kind=4) :: maxv, n
-	integer(kind=4) :: i, j, ii
-	integer(kind=4), allocatable :: idx(:), tmp(:)
+	integer(kind=4) :: i, ii
 	logical, parameter :: last_dup = .true.
 	type(str_builder_t) :: sb
 
 	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
 	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
-	!write(ERROR_UNIT, *) "nvals = ", obj%nvals
 
 	if (last_dup) then
 		! TODO: also set a flag when an actual duplicate is encountered in this
@@ -621,56 +618,6 @@ recursive function obj_to_str(json, obj) result(str)
 		! Keeping the first dup instead of last would also simplify things --
 		! just don't overwrite the val in the first place when parsing, no
 		! sorting required
-
-		! TODO:
-		! - do we really need both idx and place arrays?
-		! - can we do less idx array copies by sorting a different array in-place?
-		! - pigeonhole instead of quick sort. we know the max val (obj%nvals)
-
-		!write(ERROR_UNIT, *) "idx = ", idx
-		!idx = obj%idx(idx)
-		!write(ERROR_UNIT, *) "idx = ", idx
-		!write(ERROR_UNIT, *) ""
-
-		!! Custom pigeonhole sort
-		!maxv = obj%nvals
-		!!idx = range_i32(1, maxv)
-		!idx = zeros_i32(maxv)
-		!write(ERROR_UNIT, *) "nvals = ", obj%nvals
-		!write(ERROR_UNIT, *) "place = ", obj%place
-		!n = 0
-		!do i = 1, size(obj%keys)
-		!!do ii = 1, size(obj%keys)
-		!!	i = obj%idx(ii)
-		!	if (.not. allocated(obj%keys(i)%str)) cycle
-		!	write(ERROR_UNIT, *) i, obj%idx(i), obj%place(i)
-
-		!	idx( obj%place(i) ) = i
-		!	!idx( obj%idx(i) ) = obj%place(i)
-		!	!idx( obj%place(i) ) = obj%idx(i)
-		!	!idx( obj%place(obj%idx(i)) ) = i
-		!	!idx( obj%place(obj%idx(i)) ) = obj%idx(i)
-
-		!end do
-		!write(ERROR_UNIT, *) "idx = ", idx
-
-		!! Second pass: collect the non-zeros
-		!allocate(tmp(obj%nkeys))
-		!j = 0
-		!do i = 1, size(idx)
-		!	if (idx(i) == 0) cycle
-		!	j = j + 1
-		!	tmp(j) = idx(i)
-		!end do
-		!write(ERROR_UNIT, *) "tmp = ", tmp
-		!call move_alloc(tmp, idx)
-		!!idx = obj%idx(idx)
-
-		idx = obj%idx ! TODO: no extra array if we don't need it in any case
-
-	else
-		! No sorting required here -- only if we keep the last duplicate
-		idx = obj%idx
 	end if
 
 	sb = new_str_builder()
@@ -682,8 +629,6 @@ recursive function obj_to_str(json, obj) result(str)
 	if (json%hashed_order) then
 		ii = 0
 		do i = 1, size(obj%keys)
-			! TODO: add up an incrementor and compare to nkeys to decide when to
-			! omit last trailing comma
 			if (allocated(obj%keys(i)%str)) then
 				ii = ii + 1
 				call sb%push(keyval_to_str(json, obj, i, indent, ii == obj%nkeys))
@@ -691,7 +636,7 @@ recursive function obj_to_str(json, obj) result(str)
 		end do
 	else
 		do ii = 1, obj%nkeys
-			i = idx(ii)
+			i = obj%idx(ii)
 			call sb%push(keyval_to_str(json, obj, i, indent, ii == obj%nkeys))
 		end do
 	end if
@@ -782,6 +727,13 @@ subroutine parse_obj(lexer, obj)
 		end select
 	end do
 
+	! We might be able to deallocate obj%idx(:) here if no duplicate keys were
+	! found. However, memory savings aren't that much -- every key and val takes
+	! up more memory than an idx. Also it would be fine with current read-once
+	! architecture, but if we expose an API to modify JSON after reading, new
+	! duplicate keys might get inserted even if the object originally had unique
+	! keys
+
 	if (DEBUG > 0) then
 		write(*,*) "Finished parse_obj(), nkeys = "//to_str(obj%nkeys)
 	end if
@@ -852,8 +804,7 @@ subroutine set_map_core(obj, key, val)
 			if (DEBUG > 0) print *, "key = "//quote(obj%keys(idx)%str)
 			call move_val(val, obj%vals(idx))
 			obj%nkeys = obj%nkeys + 1
-			obj%nvals = obj%nvals + 1
-			obj%idx( obj%nkeys ) = idx
+			obj%idx( obj%nkeys ) = idx  ! the first duplicate instance determines insertion order
 			!print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
@@ -863,7 +814,6 @@ subroutine set_map_core(obj, key, val)
 			! for first vs last dupe key to take precedence. Apparently the JSON
 			! standard vaguely allows duplicates, so this should be the default
 			call move_val(val, obj%vals(idx))
-			obj%nvals = obj%nvals + 1  ! nvals is incremented here but *not* nkeys TODO delete
 			exit
 		else
 			! Collision, try next index (linear probing)
@@ -882,7 +832,6 @@ subroutine move_val(src, dst)
 	select case (src%type)
 	case (OBJ_TYPE)
 		dst%nkeys = src%nkeys
-		dst%nvals = src%nvals
 		call move_alloc(src%keys , dst%keys)
 		call move_alloc(src%vals , dst%vals)
 		call move_alloc(src%idx  , dst%idx)

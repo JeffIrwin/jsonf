@@ -140,6 +140,28 @@ subroutine test_in5(nfail, ntot)
 
 end subroutine test_in5
 
+subroutine test_in6(nfail, ntot)
+	! With duplicate keys, the last value is retained and its order is correct
+	!
+	! A pathological case with 10 keys and 5 instances each, with randomly
+	! shuffled orders after the first instance
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect
+	type(json_t) :: json
+
+	filename = "data/in6.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	json%compact = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	print *, "str_out = ", str_out
+	expect = '{"0":0,"a":1000,"b":2000,"c":3000,"d":4000,"e":5000,"f":6000,"g":7000,"h":8000,"i":9000}'
+	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
+
+end subroutine test_in6
+
 subroutine test_basic_jsons(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
@@ -225,6 +247,7 @@ program test
 	call test_in3(nfail, ntot)
 	call test_in4(nfail, ntot)
 	call test_in5(nfail, ntot)
+	call test_in6(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
