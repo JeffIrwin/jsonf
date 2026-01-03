@@ -1,9 +1,14 @@
 
 module jsonf__test
 
+	use jsonf__sort
 	use jsonf__utils
 	use jsonf
 	implicit none
+
+	interface is_sorted
+		procedure :: is_sorted_i32
+	end interface is_sorted
 
 contains
 
@@ -187,6 +192,30 @@ subroutine test_in6(nfail, ntot)
 
 end subroutine test_in6
 
+logical function is_sorted_i32(v) result(sorted)
+	integer, intent(in) :: v(:)
+	integer :: n
+	n = size(v)
+	sorted = all(v(1:n-1) <= v(2:n))
+end function is_sorted_i32
+
+subroutine test_sort(nfail, ntot)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	integer, allocatable :: v(:)
+
+	v = [72, 16, 17, 3, 53, 99, 1]
+	call sort(v)
+	print *, "v = ", v
+	TEST(is_sorted(v), "test_sort 1", nfail, ntot)
+
+	v = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -2, -3]
+	call sort(v)
+	print *, "v = ", v
+	TEST(is_sorted(v), "test_sort 2", nfail, ntot)
+
+end subroutine  test_sort
+
 subroutine test_basic_jsons(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
@@ -266,6 +295,7 @@ program test
 	nfail = 0
 	ntot = 0
 
+	call test_sort(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)
 	call test_in3(nfail, ntot)

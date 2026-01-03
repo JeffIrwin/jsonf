@@ -100,12 +100,16 @@ function partition_i32(a, idx, lo, hi) result(ans)
 	integer(kind=4) :: lo, hi, i, j, mid
 
 	! Median of three pivot
+	!
+	! TODO: claude noted these should be independent if's, not else-if's. If it's legit, port it to other sort implementations
 	mid = (lo + hi) / 2
 	if (a(idx(mid)) < a(idx(lo))) then
 		idx([lo, mid]) = idx([mid, lo])
-	else if (a(idx(hi)) < a(idx(lo))) then
+	end if
+	if (a(idx(hi)) < a(idx(lo))) then
 		idx([lo, hi]) = idx([hi, lo])
-	else if (a(idx(mid)) < a(idx(hi))) then
+	end if
+	if (a(idx(mid)) < a(idx(hi))) then
 		idx([mid, hi]) = idx([hi, mid])
 	end if
 	pivot = a(idx(hi))
@@ -182,9 +186,11 @@ function partition64_i64(a, idx, lo, hi) result(ans)
 	mid = (lo + hi) / 2
 	if (a(idx(mid)) < a(idx(lo))) then
 		idx([lo, mid]) = idx([mid, lo])
-	else if (a(idx(hi)) < a(idx(lo))) then
+	end if
+	if (a(idx(hi)) < a(idx(lo))) then
 		idx([lo, hi]) = idx([hi, lo])
-	else if (a(idx(mid)) < a(idx(hi))) then
+	end if
+	if (a(idx(mid)) < a(idx(hi))) then
 		idx([mid, hi]) = idx([hi, mid])
 	end if
 	pivot = a(idx(hi))
@@ -268,9 +274,11 @@ function partition_i64(a, idx, lo, hi) result(ans)
 	mid = (lo + hi) / 2
 	if (a(idx(mid)) < a(idx(lo))) then
 		idx([lo, mid]) = idx([mid, lo])
-	else if (a(idx(hi)) < a(idx(lo))) then
+	end if
+	if (a(idx(hi)) < a(idx(lo))) then
 		idx([lo, hi]) = idx([hi, lo])
-	else if (a(idx(mid)) < a(idx(hi))) then
+	end if
+	if (a(idx(mid)) < a(idx(hi))) then
 		idx([mid, hi]) = idx([hi, mid])
 	end if
 	pivot = a(idx(hi))
