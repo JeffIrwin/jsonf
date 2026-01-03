@@ -192,6 +192,97 @@ subroutine test_in6(nfail, ntot)
 
 end subroutine test_in6
 
+subroutine test_in7(nfail, ntot)
+	! Get keys by "json pointer" path string -- RFC 6901
+	!
+	! Basic test
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out
+	integer :: expect_i32
+	type(json_t) :: json
+	type(json_val_t) :: val
+
+	filename = "data/in7.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+
+	val = json%get_val('foo')
+	expect_i32 = 1337
+	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
+
+	! Leading path separator is optional
+	val = json%get_val('/foo')
+	expect_i32 = 1337
+	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
+
+	val = json%get_val('bar')
+	expect_i32 = 420
+	TEST(val%sca%i64 == expect_i32, "test_in7 2", nfail, ntot)
+
+	val = json%get_val('baz')
+	expect_i32 = 69
+	TEST(val%sca%i64 == expect_i32, "test_in7 3", nfail, ntot)
+
+end subroutine test_in7
+
+subroutine test_in8(nfail, ntot)
+	! Get keys by "json pointer" path string -- RFC 6901
+	!
+	! Nested objects
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect_str
+	integer(kind=8) :: expect_i64
+	type(json_t) :: json
+	type(json_val_t) :: val
+
+	filename = "data/in8.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+
+	val = json%get_val('/foo')
+	expect_i64 = 1337
+	TEST(val%sca%i64 == expect_i64, "test_in8 1", nfail, ntot)
+
+	val = json%get_val('/bar/FOO/')
+	expect_i64 = 90210
+	TEST(val%sca%i64 == expect_i64, "test_in8 2", nfail, ntot)
+
+	! Leading path separator is optional, consecutive separators are ok
+	val = json%get_val('bar///FOO//')
+	expect_i64 = 90210
+	TEST(val%sca%i64 == expect_i64, "test_in8 3", nfail, ntot)
+
+	val = json%get_val('/bar/BAR')
+	expect_i64 = 8675309
+	TEST(val%sca%i64 == expect_i64, "test_in8 4", nfail, ntot)
+
+	val = json%get_val('/baz/fOo')
+	expect_i64 = 69
+	TEST(val%sca%i64 == expect_i64, "test_in8 5", nfail, ntot)
+
+	val = json%get_val('/baz/bar/_')
+	expect_str = "very"
+	TEST(val%sca%str == expect_str, "test_in8 6", nfail, ntot)
+
+	! A space is a valid key
+	val = json%get_val('/baz/bar/ ')
+	expect_str = "nice"
+	TEST(val%sca%str == expect_str, "test_in8 7", nfail, ntot)
+
+	val = json%get_val('/baz/BaZ')
+	expect_i64 = 420
+	TEST(val%sca%i64 == expect_i64, "test_in8 8", nfail, ntot)
+
+end subroutine test_in8
+
 logical function is_sorted_i32(v) result(sorted)
 	integer, intent(in) :: v(:)
 	integer :: n
@@ -364,10 +455,13 @@ program test
 	call test_sort(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)
+	! TODO: test in2 with basic arrays
 	call test_in3(nfail, ntot)
 	call test_in4(nfail, ntot)
 	call test_in5(nfail, ntot)
 	call test_in6(nfail, ntot)
+	call test_in7(nfail, ntot)
+	call test_in8(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
