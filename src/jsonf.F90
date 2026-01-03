@@ -93,8 +93,8 @@ module jsonf
 
 		!type(arr_t) :: arr  ! TODO: arrays
 		contains
-			procedure, pass(dst) :: copy => copy_val
-			generic, public :: assignment(=) => copy
+			!procedure, pass(dst) :: copy => copy_val
+			!generic, public :: assignment(=) => copy
 	end type json_val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
@@ -690,8 +690,9 @@ recursive subroutine get_val_core(val, tokens, outval)
 	type(json_val_t) :: outval
 	!********
 	character(len=:), allocatable :: first
+	integer(kind=4) :: hash, idx, n
 	logical :: found
-	type(json_val_t) :: tmpval
+	!type(json_val_t) :: tmpval
 	type(str_t), allocatable :: rest(:)
 
 	if (size(tokens) == 0) then
@@ -699,6 +700,8 @@ recursive subroutine get_val_core(val, tokens, outval)
 
 		! Hopefully this is a small copy, unless user is doing something weird
 		! like querying the root
+		!
+		! Could even check type and warn if not scalar/primitive
 		call copy_val(outval, val)
 		!outval = val
 
@@ -714,13 +717,41 @@ recursive subroutine get_val_core(val, tokens, outval)
 		call panic("array type not implemented in get_val_json()")
 	case (OBJ_TYPE)
 
-		! Works, but there's a val copy inside
-		!call get_map(val, first, outval, found)
-		call get_map(val, first, tmpval, found)
+		!! Works, but there's a val copy inside
+		!!call get_map(val, first, outval, found)
+		!call get_map(val, first, tmpval, found)
+
+		!********
+		! inline get map to avoid copy
+
+		!subroutine get_map(obj, key, val, found)
+		found = .false.
+		hash = djb2_hash(first)
+		n = size(val%keys)
+		idx = modulo(hash, n) + 1
+
+		do
+			if (.not. allocated(val%keys(idx)%str)) then
+				! Empty slot, key not found
+				exit
+			else if (is_str_eq(val%keys(idx)%str, first)) then
+				! Key found
+				found = .true.
+				exit
+			else
+				! Collision, try next index (linear probing)
+				idx = modulo(idx, n) + 1
+			end if
+		end do
+		! end get map
+		!********
+
 		if (.not. found) then
 			call panic("key "//quote(first)//" not found")
 		end if
-		call get_val_core(tmpval, rest, outval)
+
+		!call get_val_core(tmpval, rest, outval)
+		call get_val_core(val%vals(idx), rest, outval)
 
 	case default
 		call panic("bad type in get_val_json()")
@@ -839,6 +870,8 @@ end subroutine parse_obj
 !call get_map(json, tmp_val, token, val, found)
 !subroutine get_map(json, obj, key, val, found)
 subroutine get_map(obj, key, val, found)
+	! TODO: delete if unused
+
 	!type(json_t), intent(inout) :: json
 	!type(json_t), intent(in) :: json
 	!type(json_val_t), intent(inout) :: obj
@@ -860,7 +893,7 @@ subroutine get_map(obj, key, val, found)
 			! Empty slot, key not found
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
-			! Key found
+			! Key found. Beware possibly big copy
 			call copy_val(val, obj%vals(idx))
 			found = .true.
 			exit
