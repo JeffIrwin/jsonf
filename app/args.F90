@@ -10,6 +10,7 @@ module jsonf__args
 			help         = .false., &
 			compact      = .false., &
 			quiet        = .false., &
+			tokens       = .false., &
 			has_str      = .false., &
 			has_filename = .false.
 
@@ -70,6 +71,9 @@ function parse_args() result(args)
 		case ("-h", "-help", "--help")
 			args%help = .true.
 
+		case ("-t", "--tokens")
+			args%tokens = .true.
+
 		case ("-q", "--quiet")
 			args%quiet = .true.
 
@@ -98,6 +102,12 @@ function parse_args() result(args)
 
 		case default
 
+			if (arg(1:1) == "-") then
+				error = .true.
+				write(*,*) ERROR_STR//'bad command argument "'//arg//'"'
+				cycle
+			end if
+
 			ipos = ipos + 1
 			select case (ipos)
 			case (1)
@@ -105,7 +115,7 @@ function parse_args() result(args)
 				args%filename = arg
 			case default
 				error = .true.
-				write(*,*) ERROR_STR//'bad command argument "'//arg//'"'
+				write(*,*) ERROR_STR//'bad positional command argument "'//arg//'"'
 			end select
 
 		end select
@@ -129,13 +139,15 @@ function parse_args() result(args)
 		write(*,*) "    jsonf (-s | --string) STRING"
 		write(*,*) "    jsonf -c | --compact"
 		write(*,*) "    jsonf -q | --quiet"
+		write(*,*) "    jsonf -t | --tokens"
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
-		write(*,*) "    --help        Show this help"
-		write(*,*) "    FILE.json     Input JSON filename"
-		write(*,*) "    --string      Input JSON string"
-		write(*,*) "    --compact     Format compactly without whitespace"
-		write(*,*) "    --quiet       Decrease log verbosity"
+		write(*,*) "    --help     Show this help"
+		write(*,*) "    FILE.json  Input JSON filename"
+		write(*,*) "    --string   Input JSON string"
+		write(*,*) "    --compact  Format compactly without whitespace"
+		write(*,*) "    --quiet    Decrease log verbosity"
+		write(*,*) "    --tokens   Dump tokens without parsing JSON"
 		write(*,*)
 
 		if (error) call panic("")

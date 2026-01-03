@@ -27,6 +27,7 @@ module jsonf
 	!   * invalid numbers, e.g. bad floats that look almost like a float
 	! - test nested arrays
 	! - cmd args:
+	!   * print tokens option
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
 	!   * stop-on-error on "assert"
@@ -115,15 +116,6 @@ module jsonf
 		character(len=:), allocatable :: text
 		type(sca_t) :: sca
 	end type token_t
-
-	type token_vec_t
-		type(token_t), allocatable :: vec(:)
-		integer(kind=8) :: len, cap
-		contains
-			procedure :: &
-				push => push_token, &
-				trim => trim_token_vec
-	end type token_vec_t
 
 	type lexer_t
 		integer(kind=8) :: pos
@@ -387,13 +379,6 @@ function new_token(kind, pos, text, sca) result(token)
 
 end function new_token
 
-function new_token_vec() result(vec)
-	type(token_vec_t) :: vec
-	vec%len = 0
-	vec%cap = 2  ! I think a small default makes sense here
-	allocate(vec%vec( vec%cap ))
-end function new_token_vec
-
 function new_lexer(stream) result(lexer)
 	type(stream_t) :: stream
 	type(lexer_t) :: lexer
@@ -413,15 +398,10 @@ subroutine read_file_json(json, filename)
 	class(json_t) :: json
 	character(len=*), intent(in) :: filename
 	!********
-	integer :: io
 	type(stream_t) :: stream
 
 	! Stream chars one at a time
-	stream%type = FILE_STREAM
-	open(file = filename, newunit = stream%unit, action = "read", access = "stream", iostat = io)
-	!print *, "opened stream unit "//to_str(stream%unit)
-	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
-
+	stream = new_file_stream(filename)
 	call json%parse(stream)
 
 end subroutine read_file_json
@@ -877,57 +857,68 @@ subroutine move_val(src, dst)
 
 end subroutine move_val
 
-! TODO: token_vec is never used since token streaming was implemented. Delete
-! these, but add a stream_tokens_to_str() fn in test, as a basic test, and for
-! developing new stream types (e.g. stdin, network (?))
-subroutine trim_token_vec(this)
-	class(token_vec_t) :: this
+function new_file_stream(filename) result(stream)
+	character(len=*), intent(in) :: filename
+	type(stream_t) :: stream
 	!********
-	this%vec = this%vec(1: this%len)
-	this%cap = this%len
-end subroutine trim_token_vec
+	integer :: io
+	stream%type = FILE_STREAM
+	open(file = filename, newunit = stream%unit, action = "read", access = "stream", iostat = io)
+	!print *, "opened stream unit "//to_str(stream%unit)
+	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
+end function new_file_stream
 
-subroutine push_token(vec, val)
-	class(token_vec_t) :: vec
-	type(token_t) :: val
+function new_str_stream(str) result(stream)
+	character(len=*), intent(in) :: str
+	type(stream_t) :: stream
 	!********
-	integer(kind=8) :: tmp_cap
-	type(token_t), allocatable :: tmp(:)
+	stream%type = STR_STREAM
+	stream%str = str
+	stream%pos = 1
+end function new_str_stream
 
-	vec%len = vec%len + 1
-	if (vec%len > vec%cap) then
-		tmp_cap = 2 * vec%len
-		allocate(tmp( tmp_cap ))
-		tmp(1: vec%cap) = vec%vec
+subroutine print_file_tokens(filename)
+	character(len=*), intent(in) :: filename
+	call print_stream_tokens(new_file_stream(filename))
+end subroutine print_file_tokens
 
-		call move_alloc(tmp, vec%vec)
-		vec%cap = tmp_cap
-	end if
-	vec%vec( vec%len ) = val
+subroutine print_str_tokens(str)
+	character(len=*), intent(in) :: str
+	call print_stream_tokens(new_str_stream(str))
+end subroutine print_str_tokens
 
-end subroutine push_token
-
-module function tokens_to_str(tokens) result(str)
-	! Unused, but potentially helpful for debugging
-	type(token_vec_t) :: tokens
-	character(len = :), allocatable :: str
+subroutine print_stream_tokens(stream)
+	type(stream_t) :: stream
 	!********
-	integer(kind=8) :: i
+	type(lexer_t) :: lexer
 	type(str_builder_t) :: sb
+	type(token_t) :: token
 
+	! Note that any final trailing whitespace gets lumped in with EOF_TOKEN.
+	! This is probably ok
+
+	! TODO: refactor this as a string converter and add a test. Could be useful
+	! for testing new stream types (e.g. stdin) or benchmarking performance of
+	! streaming vs loading everything in memory up front
 	sb = new_str_builder()
 	call sb%push('tokens = '//line_feed//'<<<'//line_feed)
-	do i = 1, tokens%len
+	lexer = new_lexer(stream)
+	!do while (.not. lexer%stream%is_eof)
+	do
+		token = lexer%current_token
+		!print *, "kind = ", token%kind
 		call sb%push("    " &
-			//"<"//          tokens%vec(i)%text  //"> " &
-			//"<"//kind_name(tokens%vec(i)%kind )//">"  &
+			//"<"//          token%text  //"> " &
+			//"<"//kind_name(token%kind )//">"  &
 			//line_feed &
 		)
+		if (lexer%stream%is_eof) exit
+		call lexer%next_token()
 	end do
 	call sb%push(">>>"//line_feed)
-	str = sb%trim()
+	print *, sb%trim()
 
-end function tokens_to_str
+end subroutine print_stream_tokens
 
 function kind_name(kind)
 	! TODO: consider auto-generating

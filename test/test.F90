@@ -195,14 +195,14 @@ subroutine test_basic_jsons(nfail, ntot)
 	str = '{"wierd-\"key":"my key has an escape"}'
 	call json%read_str(str)
 	str_out = json%to_str()
-	print *, "str_out = ", str_out
+	!print *, "str_out = ", str_out
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 7", nfail, ntot)
 
 	str = '{"very \"wierd\" key":"my key has multiple escapes"}'
 	call json%read_str(str)
 	str_out = json%to_str()
-	print *, "str_out = ", str_out
+	!print *, "str_out = ", str_out
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 8", nfail, ntot)
 

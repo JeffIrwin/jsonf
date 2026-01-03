@@ -19,6 +19,12 @@ subroutine app_echo_file(args)
 		msg = "JSON content from file:"
 	end if
 	json%compact = args%compact
+
+	if (args%tokens) then
+		call print_file_tokens(args%filename)
+		return
+	end if
+
 	call json%read_file(args%filename)
 	call json%print(msg)
 
@@ -35,6 +41,12 @@ subroutine app_echo_str(args)
 		msg = "JSON content from string:"
 	end if
 	json%compact = args%compact
+
+	if (args%tokens) then
+		call print_str_tokens(args%str)
+		return
+	end if
+
 	call json%read_str(args%str)
 	call json%print(msg)
 	!call json%write("junk.json")
