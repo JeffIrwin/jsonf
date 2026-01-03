@@ -672,58 +672,103 @@ subroutine parse_val(json, lexer, val)
 end subroutine parse_val
 
 function get_val_json(json, ptr) result(val)
-!recursive function get_val_json(json, ptr) result(val)
 	class(json_t), intent(in) :: json
 	character(len=*), intent(in) :: ptr
 	type(json_val_t) :: val
 	!********
-	character(len=:), allocatable :: token
-	integer :: i
-	logical :: found
-	!type(json_val_t), pointer :: pval, ptmp
-	type(json_val_t) :: tmp_val
 	type(str_vec_t) :: tokens
-
-	print *, "*********************************"
-	print *, "starting get_val_json()"
-
-	val = json%root  ! crashes w/o copy ctor
-	!call copy_val(val, json%root)
-	!pval = json%root
-
 	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
-	do i = 1, i32(tokens%len)
-		token = tokens%vec(i)%str
-		print *, "token = "//quote(token)
-		select case (val%type)
-		case (ARR_TYPE)
-			call panic("array type not implemented in get_val_json()")
-		case (OBJ_TYPE)
-			!print *, "obj type"
-
-			! I think if we use recursion, we might be able to avoid some val
-			! copies, except for the final return val to the actual caller
-
-			!print *, "copying tmp val ..."
-			!call copy_val(tmp_val, val)
-			call move_val(val, tmp_val)
-			!ptmp = pval
-			!print *, "getting map ..."
-			call get_map(json, tmp_val, token, val, found)
-			!call get_map(json, ptmp, token, pval, found)
-			!print *, "done"
-			if (.not. found) then
-				call panic("key "//quote(token)//" not found")
-			end if
-
-		case default
-			call panic("bad type in get_val_json()")
-		end select
-	end do
-	!print *, "val i64 = "//to_str(val%sca%i64)
-	!print *, "finished get_val_json()"
-
+	!call get_val_core(json%root, ptr, val)
+	call get_val_core(json%root, tokens%vec(1: tokens%len), val)
 end function get_val_json
+
+!recursive subroutine get_val_core(val, ptr, outval)
+recursive subroutine get_val_core(val, tokens, outval)
+	type(json_val_t), intent(in) :: val
+	!character(len=*), intent(in) :: ptr
+	type(str_t), intent(in) :: tokens(:)
+	type(json_val_t) :: outval
+	!********
+	character(len=:), allocatable :: first
+	logical :: found
+	type(json_val_t) :: tmpval
+	type(str_t), allocatable :: rest(:)
+
+	if (size(tokens) == 0) then
+		! Base case
+
+		! Hopefully this is a small copy, unless user is doing something weird
+		! like querying the root
+		call copy_val(outval, val)
+		!outval = val
+
+		return
+	end if
+
+	first = tokens(1)%str
+	rest = tokens(2:)
+	print *, "first = ", first
+
+	select case (val%type)
+	case (ARR_TYPE)
+		call panic("array type not implemented in get_val_json()")
+	case (OBJ_TYPE)
+
+		! Works, but there's a val copy inside
+		!call get_map(val, first, outval, found)
+		call get_map(val, first, tmpval, found)
+		if (.not. found) then
+			call panic("key "//quote(first)//" not found")
+		end if
+		call get_val_core(tmpval, rest, outval)
+
+	case default
+		call panic("bad type in get_val_json()")
+	end select
+
+	!! TODO
+	!outval%type = STR_TYPE
+	!outval%sca%str = "replace me"
+
+end subroutine get_val_core
+
+!function get_val_json(json, ptr) result(val)
+!	class(json_t), intent(in) :: json
+!	character(len=*), intent(in) :: ptr
+!	type(json_val_t) :: val
+!	!********
+!	character(len=:), allocatable :: token
+!	integer :: i
+!	logical :: found
+!	type(json_val_t) :: tmp_val
+!	type(str_vec_t) :: tokens
+!	print *, "*********************************"
+!	print *, "starting get_val_json()"
+!	call copy_val(val, json%root)
+!	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
+!	do i = 1, i32(tokens%len)
+!		token = tokens%vec(i)%str
+!		print *, "token = "//quote(token)
+!		select case (val%type)
+!		case (ARR_TYPE)
+!			call panic("array type not implemented in get_val_json()")
+!		case (OBJ_TYPE)
+!			!print *, "obj type"
+!			!print *, "moving tmp val ..."
+!			call move_val(val, tmp_val)
+!			!print *, "getting map ..."
+!			call get_map(json, tmp_val, token, val, found)
+!			if (.not. found) then
+!				call panic("key "//quote(token)//" not found")
+!			end if
+!
+!		case default
+!			call panic("bad type in get_val_json()")
+!		end select
+!	end do
+!	!print *, "val i64 = "//to_str(val%sca%i64)
+!	!print *, "finished get_val_json()"
+!end function get_val_json
 
 subroutine parse_obj(json, lexer, obj)
 	type(json_t), intent(inout) :: json
@@ -792,9 +837,10 @@ subroutine parse_obj(json, lexer, obj)
 end subroutine parse_obj
 
 !call get_map(json, tmp_val, token, val, found)
-subroutine get_map(json, obj, key, val, found)
+!subroutine get_map(json, obj, key, val, found)
+subroutine get_map(obj, key, val, found)
 	!type(json_t), intent(inout) :: json
-	type(json_t), intent(in) :: json
+	!type(json_t), intent(in) :: json
 	!type(json_val_t), intent(inout) :: obj
 	type(json_val_t), intent(in) :: obj
 	character(len=*), intent(in) :: key
@@ -823,21 +869,6 @@ subroutine get_map(json, obj, key, val, found)
 			idx = modulo(idx, n) + 1
 		end if
 	end do
-	!do
-	!	if (.not. allocated(this%entries(idx)%key)) then
-	!		! Empty slot, key not found
-	!		exit
-	!	else if (is_str_eq(this%entries(idx)%key, key)) then
-	!		! Key found
-	!		val = this%entries(idx)%val
-	!		found_ = .true.
-	!		exit
-	!	else
-	!		! Collision, try next index (linear probing)
-	!		idx = modulo(idx, size(this%entries)) + 1
-	!	end if
-	!end do
-	!if (present(found)) found = found_
 
 end subroutine get_map
 
