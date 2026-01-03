@@ -10,6 +10,7 @@ module jsonf__args
 		logical :: &
 			help         = .false., &
 			compact      = .false., &
+			no_dup       = .false., &
 			quiet        = .false., &
 			tokens       = .false., &
 			has_str      = .false., &
@@ -81,6 +82,9 @@ function parse_args() result(args)
 		case ("-c", "--compact")
 			args%compact = .true.
 
+		case ("-d", "--no-dup", "--no-duplicate-keys")
+			args%no_dup = .true.
+
 		case ("-s", "--str", "--string")
 			! Beware, fpm removes quotes from *inside* of cmd args, e.g.
 			!
@@ -140,6 +144,7 @@ function parse_args() result(args)
 		write(*,*) "    jsonf FILE.json"
 		write(*,*) "    jsonf (-s | --string) STRING"
 		write(*,*) "    jsonf -c | --compact"
+		write(*,*) "    jsonf -d | --no-dup"
 		write(*,*) "    jsonf -q | --quiet"
 		write(*,*) "    jsonf -t | --tokens"
 		write(*,*)
@@ -148,6 +153,7 @@ function parse_args() result(args)
 		write(*,*) "    FILE.json  Input JSON filename"
 		write(*,*) "    --string   Input JSON string"
 		write(*,*) "    --compact  Format compactly without whitespace"
+		write(*,*) "    --no-dup   Do not allow duplicate keys"
 		write(*,*) "    --quiet    Decrease log verbosity"
 		write(*,*) "    --tokens   Dump tokens without parsing JSON"
 		write(*,*)

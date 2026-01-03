@@ -161,6 +161,9 @@ subroutine test_in6(nfail, ntot)
 	expect = '{"0":0,"a":1000,"b":2000,"c":3000,"d":4000,"e":5000,"f":6000,"g":7000,"h":8000,"i":9000}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
+	!json%allow_duplicate_keys = .false.
+	!call json%read_file(filename)  ! error
+
 end subroutine test_in6
 
 subroutine test_basic_jsons(nfail, ntot)

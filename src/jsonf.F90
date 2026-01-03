@@ -98,6 +98,8 @@ module jsonf
 		! JSON top-level type
 		type(json_val_t) :: root
 
+		logical :: allow_duplicate_keys = .true.
+
 		! String and print output formatting options
 		character(len=:), allocatable :: indent
 		logical :: compact = .false.
@@ -463,7 +465,7 @@ subroutine parse_json(json, stream)
 
 	lexer = new_lexer(stream)
 	!write(*,*) "Parsing JSON tokens ..."
-	call parse_val(lexer, json%root)
+	call parse_val(json, lexer, json%root)
 
 end subroutine parse_json
 
@@ -648,7 +650,8 @@ recursive function obj_to_str(json, obj) result(str)
 	str = sb%trim()
 end function obj_to_str
 
-subroutine parse_val(lexer, val)
+subroutine parse_val(json, lexer, val)
+	type(json_t), intent(inout) :: json
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: val
 	!********
@@ -663,7 +666,7 @@ subroutine parse_val(lexer, val)
 		val%sca = lexer%current_token%sca
 		call lexer%next_token()
 	case (LBRACE_TOKEN)
-		call parse_obj(lexer, val)
+		call parse_obj(json, lexer, val)
 	case (LBRACKET_TOKEN)
 		call panic("array parsing not implemented yet")  ! TODO
 		!call parse_arr(val, tokens, pos)
@@ -672,7 +675,8 @@ subroutine parse_val(lexer, val)
 	end select
 end subroutine parse_val
 
-subroutine parse_obj(lexer, obj)
+subroutine parse_obj(json, lexer, obj)
+	type(json_t), intent(inout) :: json
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: obj
 	!********
@@ -689,11 +693,8 @@ subroutine parse_obj(lexer, obj)
 	! Initialize hash map storage
 	allocate(obj%keys(INIT_SIZE))
 	allocate(obj%vals(INIT_SIZE))
-	obj%nkeys = 0
-
-	! TODO: pass json container to control whether to allocate idx or not based
-	! on hashed_order and first/last dup
 	allocate(obj%idx  (INIT_SIZE))
+	obj%nkeys = 0
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -707,11 +708,11 @@ subroutine parse_obj(lexer, obj)
 		!print *, "key = ", key
 
 		call lexer%match(COLON_TOKEN)
-		call parse_val(lexer, val)
+		call parse_val(json, lexer, val)
 		!print *, "val = ", val%to_str()
 
 		! Store the key-value pair in the object
-		call set_map(obj, key, val)
+		call set_map(json, obj, key, val)
 
 		! Expect comma or end of object
 		select case (lexer%current_kind())
@@ -740,7 +741,8 @@ subroutine parse_obj(lexer, obj)
 
 end subroutine parse_obj
 
-subroutine set_map(obj, key, val)
+subroutine set_map(json, obj, key, val)
+	type(json_t), intent(inout) :: json
 	type(json_val_t), intent(inout) :: obj
 	character(len=*), intent(in) :: key
 	type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
@@ -769,18 +771,19 @@ subroutine set_map(obj, key, val)
 
 		do ii = 1, old_nkeys
 			i = old_idx(ii)
-			call set_map_core(obj, old_keys(i)%str, old_vals(i))
+			call set_map_core(json, obj, old_keys(i)%str, old_vals(i))
 		end do
 
 		deallocate(old_idx)
 		deallocate(old_vals)
 		deallocate(old_keys)
 	end if
-	call set_map_core(obj, key, val)
+	call set_map_core(json, obj, key, val)
 
 end subroutine set_map
 
-subroutine set_map_core(obj, key, val)
+subroutine set_map_core(json, obj, key, val)
+	type(json_t), intent(inout) :: json
 	type(json_val_t), intent(inout) :: obj
 	character(len=*), intent(in) :: key
 	type(json_val_t), intent(inout) :: val
@@ -809,10 +812,9 @@ subroutine set_map_core(obj, key, val)
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
-			!
-			! TODO: add option to ban duplicate keys. Maybe include an option
-			! for first vs last dupe key to take precedence. Apparently the JSON
-			! standard vaguely allows duplicates, so this should be the default
+			if (.not. json%allow_duplicate_keys) then
+				call panic("duplicate key "//quote(key))
+			end if
 			call move_val(val, obj%vals(idx))
 			exit
 		else

@@ -8,6 +8,13 @@ module jsonf__app
 
 contains
 
+subroutine args_to_json_config(args, json)
+	type(args_t), intent(in) :: args
+	type(json_t), intent(inout) :: json
+	json%compact = args%compact
+	json%allow_duplicate_keys = .not. args%no_dup
+end subroutine
+
 subroutine app_echo_file(args)
 	type(args_t), intent(in) :: args
 	type(json_t) :: json
@@ -18,7 +25,7 @@ subroutine app_echo_file(args)
 		write(*, "(a)") "Reading JSON from file: "//quote(args%filename)
 		msg = "JSON content from file:"
 	end if
-	json%compact = args%compact
+	call args_to_json_config(args, json)
 
 	if (args%tokens) then
 		call print_file_tokens(args%filename)
@@ -40,7 +47,7 @@ subroutine app_echo_str(args)
 		write(*, "(a)") "Reading JSON from string:"//LINE_FEED//"<<<"//args%str//">>>"
 		msg = "JSON content from string:"
 	end if
-	json%compact = args%compact
+	call args_to_json_config(args, json)
 
 	if (args%tokens) then
 		call print_str_tokens(args%str)
