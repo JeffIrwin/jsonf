@@ -11,22 +11,32 @@ contains
 subroutine app_echo_file(args)
 	type(args_t), intent(in) :: args
 	type(json_t) :: json
+	character(len=:), allocatable :: msg
 
-	write(*,*) "Reading JSON from file: "//quote(args%filename)
+	msg = ""
+	if (.not. args%quiet) then
+		write(*,*) "Reading JSON from file: "//quote(args%filename)
+		msg = "JSON content from file:"
+	end if
 	json%compact = args%compact
 	call json%read_file(args%filename)
-	call json%print("JSON content from file:")
+	call json%print(msg)
 
 end subroutine app_echo_file
 
 subroutine app_echo_str(args)
 	type(args_t), intent(in) :: args
 	type(json_t) :: json
+	character(len=:), allocatable :: msg
 
-	write(*,*) "Reading JSON from string:"//LINE_FEED//"<<<"//args%str//">>>"
+	msg = ""
+	if (.not. args%quiet) then
+		write(*,*) "Reading JSON from string:"//LINE_FEED//"<<<"//args%str//">>>"
+		msg = "JSON content from string:"
+	end if
 	json%compact = args%compact
 	call json%read_str(args%str)
-	call json%print("JSON content from string:")
+	call json%print(msg)
 	!call json%write("junk.json")
 
 end subroutine app_echo_str
@@ -41,8 +51,9 @@ program test
 
 	args = parse_args()
 	
-	! TODO: version logging. Turn this off unless verbose option is given
-	write(*,*) fg_bright_magenta//"Starting jsonf"//color_reset
+	if (.not. args%quiet) then
+		write(*,*) fg_bright_magenta//"Starting jsonf "//get_jsonf_vers()//color_reset
+	end if
 
 	if (args%has_filename) then
 		call app_echo_file(args)
@@ -55,7 +66,7 @@ program test
 		call panic("no input JSON filename or string given")
 	end if
 
-	call jsonf_exit(EXIT_SUCCESS)
+	call jsonf_exit(EXIT_SUCCESS, args%quiet)
 
 end program test
 

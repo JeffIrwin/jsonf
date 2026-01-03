@@ -12,6 +12,7 @@ module args_m
 			help         = .false., &
 			!assert       = .false., &  ! assert stop on error?
 			compact      = .false., &
+			quiet        = .false., &
 			has_str      = .false., &
 			has_filename = .false.
 
@@ -43,7 +44,7 @@ function get_arg(i)
 	if (io /= 0) then
 		call panic("can't get value of command argument index "//to_str(i))
 	end if
-	print *, "arg "//to_str(i)//" = <", get_arg, ">"
+	!print *, "arg "//to_str(i)//" = <", get_arg, ">"
 
 end function get_arg
 
@@ -72,6 +73,9 @@ function parse_args() result(args)
 		case ("-h", "-help", "--help")
 			args%help = .true.
 
+		case ("-q", "--quiet")
+			args%quiet = .true.
+
 		case ("-c", "--compact")
 			args%compact = .true.
 
@@ -99,7 +103,7 @@ function parse_args() result(args)
 			i = i + 1
 			args%has_str = .true.
 			args%str = get_arg(i)
-			print *, "input string = ", args%str
+			!print *, "input string = ", args%str
 
 		case default
 
@@ -128,12 +132,14 @@ function parse_args() result(args)
 		write(*,*) "    jsonf (-s | --string) STRING"
 		!write(*,*) "    jsonf -a | --assert"
 		write(*,*) "    jsonf -c | --compact"
+		write(*,*) "    jsonf -q | --quiet"
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
 		write(*,*) "    --help        Show this help"
 		write(*,*) "    FILE.json     Input JSON filename"
 		write(*,*) "    --string      Input JSON string"
 		write(*,*) "    --compact     Format compactly without whitespace"
+		write(*,*) "    --quiet       Decrease log verbosity"
 		!write(*,*) "    --assert      Abort if results do not match expected answers"
 		write(*,*)
 

@@ -38,6 +38,11 @@ module jsonf
 	! - test comments -- nonstandard but use "#" or another char if requested by some option
 	! - test diagnostics reporting line/column numbers
 
+	integer, parameter :: &
+		JSONF_MAJOR = 0, &
+		JSONF_MINOR = 1, &
+		JSONF_PATCH = 0
+
 	integer, parameter :: DEBUG = 0
 
 	type stream_t
@@ -159,6 +164,14 @@ module jsonf
 		EOF_TOKEN        = 1
 
 contains
+
+function get_jsonf_vers()
+	character(len=:), allocatable :: get_jsonf_vers
+	get_jsonf_vers = &
+		to_str(JSONF_MAJOR) // "." // &
+		to_str(JSONF_MINOR) // "." // &
+		to_str(JSONF_PATCH)
+end function get_jsonf_vers
 
 character function lexer_current(lexer)
 	! Current char
@@ -532,7 +545,7 @@ subroutine print_json(this, msg)
 	character(len=*), intent(in), optional :: msg
 	!********
 	if (present(msg)) then
-		write(*, "(a)") msg
+		if (msg /= "") write(*, "(a)") msg
 	end if
 	call write_json(this)
 end subroutine print_json
