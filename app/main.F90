@@ -43,13 +43,12 @@ subroutine app_echo_file(args)
 		! for debugging
 		print *, "pointer = "//quote(args%pointer)
 
-		!val = json%get_val(args%pointer)
-		call copy_val(val, json%get_val(args%pointer))
-		!call copy_val(val, obj%vals(idx))
+		val = json%get_val(args%pointer)
+		!call copy_val(val, json%get_val(args%pointer))
 
 		!print *, "val = "//val%to_str()
-		print *, "done get_val()"
-		print *, "printing val ..."
+		!print *, "done get_val()"
+		!print *, "printing val ..."
 		print *, "val = "//val_to_str(json, val)
 
 	end if

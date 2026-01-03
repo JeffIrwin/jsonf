@@ -690,50 +690,31 @@ function get_val_json(json, ptr) result(val)
 	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
 	do i = 1, i32(tokens%len)
 		token = tokens%vec(i)%str
-		print *, "token = "//quote(token)
+		!print *, "token = "//quote(token)
 		select case (val%type)
 		case (ARR_TYPE)
 			call panic("array type not implemented in get_val_json()")
 		case (OBJ_TYPE)
-			print *, "obj type"
+			!print *, "obj type"
 
 			! I think if we use recursion, we might be able to avoid some val
 			! copies, except for the final return val to the actual caller
 
-			!call set_map(json, obj, key, val)
-			print *, "copying tmp val ..."
+			!print *, "copying tmp val ..."
 			call copy_val(tmp_val, val)
-			print *, "getting map ..."
+			!print *, "getting map ..."
 			call get_map(json, tmp_val, token, val, found)
-			print *, "done"
+			!print *, "done"
+			if (.not. found) then
+				call panic("key "//quote(token)//" not found")
+			end if
 
 		case default
 			call panic("bad type in get_val_json()")
 		end select
 	end do
-	print *, "val i64 = "//to_str(val%sca%i64)
-	print *, "finished get_val_json()"
-
-	!! Rosetta code:  https://rosettacode.org/wiki/JSON_pointer
-	! set the current node to the document root
-	! FOR each token in the pointer
-	!   decode the token
-	!   IF the current node is an array
-	!     IF the token is a string representation of an array index AND the index is in range
-	!       set the current node to node[index]
-	!     ELSE
-	!       error condition
-	!     ENDIF
-	!   ELSE IF the current node is an object
-	!     IF the current node has a property matching token
-	!       set the current node to node[token]
-	!     ELSE
-	!       error condition
-	!     ENDIF
-	!   ELSE
-	!     error condition
-	!   ENDIF
-	! ENDFOR
+	!print *, "val i64 = "//to_str(val%sca%i64)
+	!print *, "finished get_val_json()"
 
 end function get_val_json
 
@@ -962,11 +943,13 @@ subroutine move_val(src, dst)
 
 end subroutine move_val
 
-subroutine copy_val(dst, src)
+recursive subroutine copy_val(dst, src)
 	! TODO: try to avoid
 	class(json_val_t), intent(in) :: src
 	class(json_val_t), intent(out) :: dst
 	!********
+	integer :: i
+
 	dst%type = src%type
 	select case (src%type)
 	case (OBJ_TYPE)
@@ -974,15 +957,23 @@ subroutine copy_val(dst, src)
 		!call move_alloc(src%keys , dst%keys)
 		!call move_alloc(src%vals , dst%vals)
 		!call move_alloc(src%idx  , dst%idx)
+
 		dst%keys = src%keys
-		dst%vals = src%vals ! TODO: recurse?
+
+		! Recurse
+		allocate(dst%vals( size(src%vals) ))
+		do i = 1, size(src%vals)
+			if (.not. allocated(src%keys(i)%str)) cycle
+			call copy_val(dst%vals(i), src%vals(i))
+		end do
+		!dst%vals = src%vals
+
 		dst%idx  = src%idx
 
 	case (ARR_TYPE)
 		call panic("array move_val not implemented yet")  ! TODO
 
 	case default
-		! Lightweight scalars are actually just copied
 		dst%sca = src%sca
 	end select
 
