@@ -114,7 +114,7 @@ subroutine test_in4(nfail, ntot)
 	call json%read_file(filename)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-	expect = '{"a":1,"c":3,"b":9999}'
+	expect = '{"a":1,"b":9999,"c":3}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 end subroutine test_in4
