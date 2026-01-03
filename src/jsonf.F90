@@ -89,7 +89,6 @@ module jsonf
 		! more than 2 GB counting quotes and colons, even without whitespace and
 		! 1-char keys. Non-duplicate keys would have to be at least 4 or 5 chars
 		integer(kind=4), allocatable :: idx(:)    ! for consistent output of object hashmap members
-		integer(kind=4), allocatable :: place(:)  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
 	end type json_val_t
@@ -565,7 +564,7 @@ end function json_to_str
 recursive function keyval_to_str(json, obj, i, indent, last) result(str)
 	type(json_t), intent(inout) :: json
 	type(json_val_t), intent(in) :: obj
-	integer(kind=8), intent(in) :: i
+	integer(kind=4), intent(in) :: i
 	character(len=*), intent(in) :: indent
 	character(len = :), allocatable :: str
 	logical, intent(in) :: last
@@ -596,14 +595,16 @@ recursive function keyval_to_str(json, obj, i, indent, last) result(str)
 end function keyval_to_str
 
 recursive function obj_to_str(json, obj) result(str)
+	use jsonf__blarg
 	use jsonf__sort
 	type(json_t), intent(inout) :: json
 	type(json_val_t), intent(in) :: obj
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: indent
-	integer(kind=8) :: i, ii
-	integer(kind=8), allocatable :: idx(:)
+	integer(kind=4) :: maxv, n
+	integer(kind=4) :: i, j, ii
+	integer(kind=4), allocatable :: idx(:), tmp(:)
 	logical, parameter :: last_dup = .true.
 	type(str_builder_t) :: sb
 
@@ -611,8 +612,6 @@ recursive function obj_to_str(json, obj) result(str)
 	!write(ERROR_UNIT, *) "starting obj_to_str()"
 	!write(ERROR_UNIT, *) "in obj_to_str: idx = ", obj%idx(1: obj%nkeys)
 	!write(ERROR_UNIT, *) "nvals = ", obj%nvals
-	!write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place
-	!write(ERROR_UNIT, *) "in obj_to_str: pla = ", obj%place(obj%idx(1: obj%nkeys))
 
 	if (last_dup) then
 		! TODO: also set a flag when an actual duplicate is encountered in this
@@ -628,9 +627,46 @@ recursive function obj_to_str(json, obj) result(str)
 		! - can we do less idx array copies by sorting a different array in-place?
 		! - pigeonhole instead of quick sort. we know the max val (obj%nvals)
 
-		idx = sort_index(obj%place(obj%idx(1: obj%nkeys)))
 		!write(ERROR_UNIT, *) "idx = ", idx
-		idx = obj%idx(idx)
+		!idx = obj%idx(idx)
+		!write(ERROR_UNIT, *) "idx = ", idx
+		!write(ERROR_UNIT, *) ""
+
+		!! Custom pigeonhole sort
+		!maxv = obj%nvals
+		!!idx = range_i32(1, maxv)
+		!idx = zeros_i32(maxv)
+		!write(ERROR_UNIT, *) "nvals = ", obj%nvals
+		!write(ERROR_UNIT, *) "place = ", obj%place
+		!n = 0
+		!do i = 1, size(obj%keys)
+		!!do ii = 1, size(obj%keys)
+		!!	i = obj%idx(ii)
+		!	if (.not. allocated(obj%keys(i)%str)) cycle
+		!	write(ERROR_UNIT, *) i, obj%idx(i), obj%place(i)
+
+		!	idx( obj%place(i) ) = i
+		!	!idx( obj%idx(i) ) = obj%place(i)
+		!	!idx( obj%place(i) ) = obj%idx(i)
+		!	!idx( obj%place(obj%idx(i)) ) = i
+		!	!idx( obj%place(obj%idx(i)) ) = obj%idx(i)
+
+		!end do
+		!write(ERROR_UNIT, *) "idx = ", idx
+
+		!! Second pass: collect the non-zeros
+		!allocate(tmp(obj%nkeys))
+		!j = 0
+		!do i = 1, size(idx)
+		!	if (idx(i) == 0) cycle
+		!	j = j + 1
+		!	tmp(j) = idx(i)
+		!end do
+		!write(ERROR_UNIT, *) "tmp = ", tmp
+		!call move_alloc(tmp, idx)
+		!!idx = obj%idx(idx)
+
+		idx = obj%idx ! TODO: no extra array if we don't need it in any case
 
 	else
 		! No sorting required here -- only if we keep the last duplicate
@@ -713,7 +749,6 @@ subroutine parse_obj(lexer, obj)
 	! TODO: pass json container to control whether to allocate idx or not based
 	! on hashed_order and first/last dup
 	allocate(obj%idx  (INIT_SIZE))
-	allocate(obj%place(INIT_SIZE))
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) then
@@ -759,7 +794,7 @@ subroutine set_map(obj, key, val)
 	type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
 	integer(kind=8) :: i, ii, n, n0, old_nkeys
-	integer(kind=4), allocatable :: old_idx(:), old_place(:)
+	integer(kind=4), allocatable :: old_idx(:)
 	type(str_t), allocatable :: old_keys(:)
 	type(json_val_t), allocatable :: old_vals(:)
 
@@ -774,12 +809,10 @@ subroutine set_map(obj, key, val)
 		call move_alloc(obj%keys, old_keys)
 		call move_alloc(obj%vals, old_vals)
 		call move_alloc(obj%idx, old_idx)
-		call move_alloc(obj%place, old_place)
 
 		allocate(obj%keys (n))
 		allocate(obj%vals (n))
 		allocate(obj%idx  (n))
-		allocate(obj%place(n))
 		obj%nkeys = 0
 
 		do ii = 1, old_nkeys
@@ -787,7 +820,6 @@ subroutine set_map(obj, key, val)
 			call set_map_core(obj, old_keys(i)%str, old_vals(i))
 		end do
 
-		deallocate(old_place)
 		deallocate(old_idx)
 		deallocate(old_vals)
 		deallocate(old_keys)
@@ -822,7 +854,6 @@ subroutine set_map_core(obj, key, val)
 			obj%nkeys = obj%nkeys + 1
 			obj%nvals = obj%nvals + 1
 			obj%idx( obj%nkeys ) = idx
-			obj%place(idx) = obj%nvals
 			!print *, "pushing idx ", idx
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
@@ -832,8 +863,7 @@ subroutine set_map_core(obj, key, val)
 			! for first vs last dupe key to take precedence. Apparently the JSON
 			! standard vaguely allows duplicates, so this should be the default
 			call move_val(val, obj%vals(idx))
-			obj%nvals = obj%nvals + 1  ! nvals is incremented here but *not* nkeys
-			obj%place(idx) = obj%nvals
+			obj%nvals = obj%nvals + 1  ! nvals is incremented here but *not* nkeys TODO delete
 			exit
 		else
 			! Collision, try next index (linear probing)
@@ -856,7 +886,6 @@ subroutine move_val(src, dst)
 		call move_alloc(src%keys , dst%keys)
 		call move_alloc(src%vals , dst%vals)
 		call move_alloc(src%idx  , dst%idx)
-		call move_alloc(src%place, dst%place)
 
 	case (ARR_TYPE)
 		call panic("array move_val not implemented yet")  ! TODO
