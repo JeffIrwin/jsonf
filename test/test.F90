@@ -54,14 +54,14 @@ subroutine test_in1(nfail, ntot)
 		'{' // LINE_FEED // &
 		'    "c": "my str",' // LINE_FEED // &
 		'    "a": 1,' // LINE_FEED // &
-		'    "b": 2,' // LINE_FEED // &
+		'    "b": 2' // LINE_FEED // &
 		'}'
 	TEST(is_str_eq(str_out, expect), "test_in1 1", nfail, ntot)
 
 	json%compact = .true.
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-	expect = '{"c":"my str","a":1,"b":2,}'
+	expect = '{"c":"my str","a":1,"b":2}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 	! TODO: add tests with multiple indentation depths and custom indent strs
@@ -74,7 +74,7 @@ subroutine test_in1(nfail, ntot)
 	str = read_file(filename)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-	expect = '{"a":1,"b":2,"c":"my str",}'
+	expect = '{"a":1,"b":2,"c":"my str"}'
 	TEST(is_str_eq(str_out, expect), "test_in1 3", nfail, ntot)
 
 end subroutine test_in1
@@ -95,7 +95,7 @@ subroutine test_in3(nfail, ntot)
 	call json%read_file(filename)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-	expect = '{"a":1,"b":{"a":11,"b":{"a":111,"b":"here''s a "string"","c":333,},"c":33,"d":44,},"c":3,"d":4,"e":5,}'
+	expect = '{"a":1,"b":{"a":11,"b":{"a":111,"b":"here''s a \"string\"","c":333},"c":33,"d":44},"c":3,"d":4,"e":5}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 end subroutine test_in3
@@ -114,7 +114,7 @@ subroutine test_in4(nfail, ntot)
 	call json%read_file(filename)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-	expect = '{"a":1,"c":3,"b":9999,}'
+	expect = '{"a":1,"c":3,"b":9999}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 end subroutine test_in4
@@ -135,7 +135,7 @@ subroutine test_in5(nfail, ntot)
 	call json%read_file(filename)
 	str_out = json%to_str()
 	!print *, "str_out = ", str_out
-	expect = '{"a":1111,"c":3333,"b":9999,}'
+	expect = '{"a":1111,"c":3333,"b":9999}'
 	TEST(is_str_eq(str_out, expect), "test_in1 2", nfail, ntot)
 
 end subroutine test_in5
@@ -156,14 +156,14 @@ subroutine test_basic_jsons(nfail, ntot)
 	! TODO: everything will break after trailing commas are removed
 	expect = &
 		'{'//LINE_FEED// &
-		'    "a": 1,'//LINE_FEED// &
+		'    "a": 1'//LINE_FEED// &
 		'}'
 	!print *, "expect = ", expect
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 1", nfail, ntot)
 
 	json%compact = .true.
 	str_out = json%to_str()
-	expect = '{"a":1,}'
+	expect = '{"a":1}'
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2", nfail, ntot)
 
 	str = '69'
@@ -185,6 +185,26 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 5", nfail, ntot)
+
+	str = '"my \"escaped\" string"'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 6", nfail, ntot)
+
+	str = '{"wierd-\"key":"my key has an escape"}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	print *, "str_out = ", str_out
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 7", nfail, ntot)
+
+	str = '{"very \"wierd\" key":"my key has multiple escapes"}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	print *, "str_out = ", str_out
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 8", nfail, ntot)
 
 end subroutine test_basic_jsons
 

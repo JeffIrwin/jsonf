@@ -8,7 +8,6 @@ module jsonf__args
 
 		logical :: &
 			help         = .false., &
-			!assert       = .false., &  ! assert stop on error?
 			compact      = .false., &
 			quiet        = .false., &
 			has_str      = .false., &
@@ -77,12 +76,6 @@ function parse_args() result(args)
 		case ("-c", "--compact")
 			args%compact = .true.
 
-		!case ("-a", "--assert")
-		!	! TODO: do something with this. json-fortran has a "stop-on-error"
-		!	! option which I would like to implement, default false and return
-		!	! error codes but continue. Maybe rename the arg
-		!	args%assert = .true.
-
 		case ("-s", "--str", "--string")
 			! Beware, fpm removes quotes from *inside* of cmd args, e.g.
 			!
@@ -134,7 +127,6 @@ function parse_args() result(args)
 		write(*,*) "    jsonf -h | --help"
 		write(*,*) "    jsonf FILE.json"
 		write(*,*) "    jsonf (-s | --string) STRING"
-		!write(*,*) "    jsonf -a | --assert"
 		write(*,*) "    jsonf -c | --compact"
 		write(*,*) "    jsonf -q | --quiet"
 		write(*,*)
@@ -144,7 +136,6 @@ function parse_args() result(args)
 		write(*,*) "    --string      Input JSON string"
 		write(*,*) "    --compact     Format compactly without whitespace"
 		write(*,*) "    --quiet       Decrease log verbosity"
-		!write(*,*) "    --assert      Abort if results do not match expected answers"
 		write(*,*)
 
 		if (error) call panic("")

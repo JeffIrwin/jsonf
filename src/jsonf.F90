@@ -29,6 +29,7 @@ module jsonf
 	! - cmd args:
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
+	!   * stop-on-error on "assert"
 	! - check json-fortran, jq, and other similar projects for features to add
 	! - test re-entry with re-using one object to load multiple JSON inputs in
 	!   sequence. might find bugs with things that need to be deallocated first
@@ -70,7 +71,7 @@ module jsonf
 		character(len=:), allocatable :: str
 	end type sca_t
 
-	type val_t
+	type json_val_t
 		! JSON value type -- scalar, array, or object
 		!
 		! TODO: maybe rename to json_val_t? It might end up user-facing
@@ -79,17 +80,17 @@ module jsonf
 
 		integer(kind=8) :: nkeys = 0, nvals = 0
 		type(str_t), allocatable :: keys(:)
-		type(val_t), allocatable :: vals(:)
+		type(json_val_t), allocatable :: vals(:)
 		integer(kind=8), allocatable :: idx(:)  ! for consistent output of object hashmap members
 		integer(kind=8), allocatable :: place(:)  ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
-	end type val_t
+	end type json_val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
 	type json_t
 		! JSON top-level type
-		type(val_t) :: root
+		type(json_val_t) :: root
 
 		! String and print output formatting options
 		character(len=:), allocatable :: indent
@@ -499,16 +500,30 @@ subroutine lexer_match(lexer, kind)
 
 end subroutine lexer_match
 
+function escape(str)
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: escape
+	!********
+	integer :: i
+	type(str_builder_t) :: sb
+	sb = new_str_builder()
+	do i = 1, len(str)
+		if (any(str(i:i) == ['"'])) call sb%push("\")
+		call sb%push(str(i:i))
+	end do
+	escape = sb%trim()
+end function escape
+
 ! Do these need to be declared recursive? I remember certain fortran compilers being picky about it, even though it's only inderictly recursive.  Same with obj_to_str()
 recursive function val_to_str(json, val) result(str)
 	type(json_t), intent(inout) :: json
-	type(val_t), intent(in) :: val
+	type(json_val_t), intent(in) :: val
 	character(len = :), allocatable :: str
 	!********
-	! Don't need a str_builder here since val_t is a single value
+	! Don't need a str_builder here since json_val_t is a single value
 	select case (val%type)
 	case (STR_TYPE)
-		str = quote(val%sca%str)
+		str = quote(escape(val%sca%str))
 	case (I64_TYPE)
 		str = to_str(val%sca%i64)
 	case (OBJ_TYPE)
@@ -564,12 +579,13 @@ function json_to_str(this) result(str)
 	str = val_to_str(this, this%root)
 end function json_to_str
 
-recursive function keyval_to_str(json, obj, i, indent) result(str)
+recursive function keyval_to_str(json, obj, i, indent, last) result(str)
 	type(json_t), intent(inout) :: json
-	type(val_t), intent(in) :: obj
+	type(json_val_t), intent(in) :: obj
 	integer(kind=8), intent(in) :: i
 	character(len=*), intent(in) :: indent
 	character(len = :), allocatable :: str
+	logical, intent(in) :: last
 	!********
 	character(len=:), allocatable :: key_str, val_str
 	type(str_builder_t) :: sb
@@ -577,7 +593,7 @@ recursive function keyval_to_str(json, obj, i, indent) result(str)
 	!write(ERROR_UNIT, *) "key = "//quote(obj%keys(i)%str)
 
 	sb = new_str_builder()
-	key_str = quote(obj%keys(i)%str)  ! TODO: quote escaping
+	key_str = quote(escape(obj%keys(i)%str))
 	val_str = val_to_str(json, obj%vals(i))
 	if (.not. json%compact) call sb%push(indent)
 	call sb%push(key_str//":")
@@ -590,7 +606,7 @@ recursive function keyval_to_str(json, obj, i, indent) result(str)
 	!! readable with helper vars anyway
 	!call sb%push(indent//quote(obj%keys(i)%str)//": "//val_to_str(json, obj%vals(i)))
 
-	call sb%push(",")
+	if (.not. last) call sb%push(",")
 	if (.not. json%compact) call sb%push(LINE_FEED)
 	str = sb%trim()
 
@@ -599,7 +615,7 @@ end function keyval_to_str
 recursive function obj_to_str(json, obj) result(str)
 	use jsonf__sort
 	type(json_t), intent(inout) :: json
-	type(val_t), intent(in) :: obj
+	type(json_val_t), intent(in) :: obj
 	character(len = :), allocatable :: str
 	!********
 	character(len=:), allocatable :: indent
@@ -638,18 +654,19 @@ recursive function obj_to_str(json, obj) result(str)
 	indent = repeat(json%indent, json%indent_level)
 
 	if (json%hashed_order) then
+		ii = 0
 		do i = 1, size(obj%keys)
 			! TODO: add up an incrementor and compare to nkeys to decide when to
 			! omit last trailing comma
 			if (allocated(obj%keys(i)%str)) then
-				call sb%push(keyval_to_str(json, obj, i, indent))
+				ii = ii + 1
+				call sb%push(keyval_to_str(json, obj, i, indent, ii == obj%nkeys))
 			end if
 		end do
 	else
 		do ii = 1, obj%nkeys
-			! TODO: omit trailing comma -- trivial for this case
 			i = idx(ii)
-			call sb%push(keyval_to_str(json, obj, i, indent))
+			call sb%push(keyval_to_str(json, obj, i, indent, ii == obj%nkeys))
 		end do
 	end if
 
@@ -662,7 +679,7 @@ end function obj_to_str
 
 subroutine parse_val(lexer, val)
 	type(lexer_t), intent(inout) :: lexer
-	type(val_t), intent(out) :: val
+	type(json_val_t), intent(out) :: val
 	!********
 	select case (lexer%current_token%kind)
 	case (STR_TOKEN)
@@ -686,10 +703,10 @@ end subroutine parse_val
 
 subroutine parse_obj(lexer, obj)
 	type(lexer_t), intent(inout) :: lexer
-	type(val_t), intent(out) :: obj
+	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key
-	type(val_t) :: val
+	type(json_val_t) :: val
 	integer, parameter :: INIT_SIZE = 2
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
@@ -747,14 +764,14 @@ subroutine parse_obj(lexer, obj)
 end subroutine parse_obj
 
 subroutine set_map(obj, key, val)
-	type(val_t), intent(inout) :: obj
+	type(json_val_t), intent(inout) :: obj
 	character(len=*), intent(in) :: key
-	type(val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
+	type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
 	integer(kind=8) :: i, ii, n, n0, old_nkeys
 	integer(kind=8), allocatable :: old_idx(:), old_place(:)
 	type(str_t), allocatable :: old_keys(:)
-	type(val_t), allocatable :: old_vals(:)
+	type(json_val_t), allocatable :: old_vals(:)
 
 	n0 = size(obj%keys)
 	if (obj%nkeys * 2 >= n0) then
@@ -790,9 +807,9 @@ subroutine set_map(obj, key, val)
 end subroutine set_map
 
 subroutine set_map_core(obj, key, val)
-	type(val_t), intent(inout) :: obj
+	type(json_val_t), intent(inout) :: obj
 	character(len=*), intent(in) :: key
-	type(val_t), intent(inout) :: val
+	type(json_val_t), intent(inout) :: val
 	!********
 	integer(8) :: hash, idx, n
 
@@ -838,8 +855,8 @@ end subroutine set_map_core
 
 subroutine move_val(src, dst)
 	! A copy constructor could be added if needed, but it's best to avoid for performance
-	type(val_t), intent(out) :: dst
-	type(val_t), intent(inout) :: src
+	type(json_val_t), intent(out) :: dst
+	type(json_val_t), intent(inout) :: src
 	!********
 	dst%type = src%type
 	select case (src%type)
