@@ -288,6 +288,11 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 420
 	TEST(val%sca%i64 == expect_i64, "test_in8 8", nfail, ntot)
 
+	!! TODO: empty space key (after last "/") doesn't work
+	!val = json%get_val('/baz/bar/')
+	!expect_str = "kicks"
+	!TEST(val%sca%str == expect_str, "test_in8 9", nfail, ntot)
+
 end subroutine test_in8
 
 logical function is_sorted_i32(v) result(sorted)

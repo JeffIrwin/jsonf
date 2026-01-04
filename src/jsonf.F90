@@ -689,7 +689,7 @@ recursive subroutine get_val_core(val, tokens, outval)
 	type(json_val_t) :: outval
 	!********
 	character(len=:), allocatable :: first
-	integer(kind=4) :: hash, idx, n
+	integer(kind=4) :: idx
 	logical :: found
 	type(str_t), allocatable :: rest(:)
 
@@ -713,28 +713,10 @@ recursive subroutine get_val_core(val, tokens, outval)
 		call panic("array type not implemented in get_val_json()")
 	case (OBJ_TYPE)
 
-		! Inline get map to avoid copy. Could keep it as a routine but return an
-		! index instead of copying val
-		found = .false.
-		hash = djb2_hash(first)
-		n = size(val%keys)
-		idx = modulo(hash, n) + 1
-		do
-			if (.not. allocated(val%keys(idx)%str)) then
-				! Empty slot, key not found
-				exit
-			else if (is_str_eq(val%keys(idx)%str, first)) then
-				found = .true.
-				exit
-			else
-				! Collision, try next index (linear probing)
-				idx = modulo(idx, n) + 1
-			end if
-		end do
+		idx = get_map_idx(val, first, found)
 		if (.not. found) then
 			call panic("key "//quote(first)//" not found")
 		end if
-
 		call get_val_core(val%vals(idx), rest, outval)
 
 	case default
@@ -809,34 +791,24 @@ subroutine parse_obj(json, lexer, obj)
 
 end subroutine parse_obj
 
-!call get_map(json, tmp_val, token, val, found)
-!subroutine get_map(json, obj, key, val, found)
-subroutine get_map(obj, key, val, found)
-	! TODO: delete if unused
-
-	!type(json_t), intent(inout) :: json
-	!type(json_t), intent(in) :: json
-	!type(json_val_t), intent(inout) :: obj
+integer function get_map_idx(obj, key, found) result(idx)
+	! Find the index of the key in its parent object.  Only return its index to
+	! avoid a heavy value copy
 	type(json_val_t), intent(in) :: obj
 	character(len=*), intent(in) :: key
-	!type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
-	type(json_val_t), intent(out) :: val  ! intent out because it gets moved instead of copied
 	logical, intent(out) :: found
 	!********
-	integer(kind=4) :: hash, idx, n
+	integer(kind=4) :: hash, n
 
 	found = .false.
 	hash = djb2_hash(key)
 	n = size(obj%keys)
 	idx = modulo(hash, n) + 1
-
 	do
 		if (.not. allocated(obj%keys(idx)%str)) then
 			! Empty slot, key not found
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
-			! Key found. Beware possibly big copy
-			call copy_val(val, obj%vals(idx))
 			found = .true.
 			exit
 		else
@@ -845,7 +817,7 @@ subroutine get_map(obj, key, val, found)
 		end if
 	end do
 
-end subroutine get_map
+end function get_map_idx
 
 subroutine set_map(json, obj, key, val)
 	type(json_t), intent(inout) :: json
