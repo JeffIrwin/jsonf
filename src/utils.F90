@@ -612,7 +612,9 @@ end function mat_char_to_str
 
 subroutine panic(msg)
 	character(len = *), intent(in) :: msg
-	if (msg /= "") write(*, "(a)") ERROR_STR//msg
+	! Write to ERROR_UNIT.  If a printing routine panics, it would otherwise
+	! hang on recursive stdout
+	if (msg /= "") write(ERROR_UNIT, "(a)") ERROR_STR//msg
 	call jsonf_exit(EXIT_FAILURE)
 end subroutine panic
 

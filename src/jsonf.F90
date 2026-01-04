@@ -82,16 +82,19 @@ module jsonf
 		integer :: type
 		type(sca_t) :: sca
 
+		! Object members
 		integer(kind=4) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(json_val_t), allocatable :: vals(:)
+
+		! Array members
+		integer(kind=4) :: narr = 0  ! TODO: not needed if we trim after reading?
+		type(json_val_t), allocatable :: arr(:)  ! could re-use vals(:) but this might be less error-prone
 
 		! i32 should be ok. If a JSON object has 2 billion keys, it will be much
 		! more than 2 GB counting quotes and colons, even without whitespace and
 		! 1-char keys. Non-duplicate keys would have to be at least 4 or 5 chars
 		integer(kind=4), allocatable :: idx(:)    ! for consistent output of object hashmap members
-
-		!type(arr_t) :: arr  ! TODO: arrays
 	end type json_val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
@@ -523,6 +526,8 @@ recursive function val_to_str(json, val) result(str)
 		str = to_str(val%sca%i64)
 	case (OBJ_TYPE)
 		str = obj_to_str(json, val)
+	case (ARR_TYPE)
+		str = arr_to_str(json, val)
 	case default
 		call panic("val_to_str: unknown type "//kind_name(val%type))
 	end select
@@ -606,6 +611,41 @@ recursive function keyval_to_str(json, obj, i, indent, last) result(str)
 
 end function keyval_to_str
 
+recursive function arr_to_str(json, arr) result(str)
+	use jsonf__blarg
+	use jsonf__sort
+	type(json_t), intent(inout) :: json
+	type(json_val_t), intent(in) :: arr
+	character(len = :), allocatable :: str
+	!********
+	character(len=:), allocatable :: indent
+	integer(kind=4) :: i
+	type(str_builder_t) :: sb
+
+	!! Be careful with debug logging. If you write directly to stdout, it hang forever for inadvertent recursive prints
+	!write(ERROR_UNIT, *) "starting arr_to_str()"
+
+	sb = new_str_builder()
+	call sb%push("[")
+	if (.not. json%compact) call sb%push(LINE_FEED)
+	json%indent_level = json%indent_level + 1
+	indent = repeat(json%indent, json%indent_level)
+
+	do i = 1, arr%narr
+		if (.not. json%compact) call sb%push(indent)
+		if (.not. json%compact) call sb%push(" ")
+		call sb%push(val_to_str(json, arr%arr(i)))
+		if (i < arr%narr) call sb%push(",")
+		if (.not. json%compact) call sb%push(LINE_FEED)
+	end do
+
+	json%indent_level = json%indent_level - 1
+	indent = repeat(json%indent, json%indent_level)
+	if (.not. json%compact) call sb%push(indent)
+	call sb%push("]")
+	str = sb%trim()
+end function arr_to_str
+
 recursive function obj_to_str(json, obj) result(str)
 	use jsonf__blarg
 	use jsonf__sort
@@ -667,8 +707,7 @@ subroutine parse_val(json, lexer, val)
 	case (LBRACE_TOKEN)
 		call parse_obj(json, lexer, val)
 	case (LBRACKET_TOKEN)
-		call panic("array parsing not implemented yet")  ! TODO
-		!call parse_arr(val, tokens, pos)
+		call parse_arr(json, lexer, val)
 	case default
 		call panic("unexpected value type in object of kind " // &
 			kind_name(lexer%current_kind()))
@@ -776,14 +815,81 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 
 end subroutine get_val_core
 
+subroutine parse_arr(json, lexer, arr)
+	type(json_t), intent(inout) :: json
+	type(lexer_t), intent(inout) :: lexer
+	type(json_val_t), intent(out) :: arr
+	!********
+	integer, parameter :: INIT_SIZE = 2
+	integer :: idx
+	integer(kind=8) :: i, n, n0 ! TODO: kind?
+	type(json_val_t) :: val
+	type(json_val_t), allocatable :: old_arr(:)
+
+	if (DEBUG > 0) print *, "Starting parse_arr()"
+
+	if (DEBUG > 0) print *, "matching LBRACKET_TOKEN"
+	call lexer%match(LBRACKET_TOKEN)
+	arr%type = ARR_TYPE
+
+	! Initialize array storage
+	allocate(arr%arr(INIT_SIZE))
+	arr%narr = 0
+
+	idx = 0
+	do
+		if (lexer%current_kind() == RBRACKET_TOKEN) exit
+		idx = idx + 1
+		!print *, "idx = ", idx
+
+		call parse_val(json, lexer, val)
+		!print *, "val = ", val%to_str()
+
+		n0 = size(arr%arr)
+		if (idx > n0) then
+			! Resize array dynamically
+			n = n0 * 2
+			call move_alloc(arr%arr, old_arr)
+			allocate(arr%arr(n))
+			do i = 1, n0
+				call move_val(old_arr(i), arr%arr(i))
+			end do
+			deallocate(old_arr)
+		end if
+
+		! Store the value
+		call move_val(val, arr%arr(idx))
+
+		if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
+	end do
+	arr%narr = idx
+	!print *, "current  = ", kind_name(lexer%current_kind())
+	!print *, "previous = ", kind_name(lexer%previous_token%kind)
+
+	if (lexer%previous_token%kind == COMMA_TOKEN) then
+		if (json%error_trailing_commas) then
+			call panic("trailing comma in array")
+		end if
+		if (json%warn_trailing_commas) then
+			write(*, "(a)") WARN_STR//"trailing comma in array"
+		end if
+	end if
+	call lexer%match(RBRACKET_TOKEN)
+
+	if (DEBUG > 0) then
+		write(*,*) "Finished parse_arr(), narr = "//to_str(arr%narr)
+	end if
+
+end subroutine parse_arr
+
 subroutine parse_obj(json, lexer, obj)
 	type(json_t), intent(inout) :: json
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key
-	type(json_val_t) :: val
 	integer, parameter :: INIT_SIZE = 2
+	type(json_val_t) :: val
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
 
@@ -873,7 +979,7 @@ subroutine set_map(json, obj, key, val)
 	character(len=*), intent(in) :: key
 	type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
-	integer(kind=8) :: i, ii, n, n0, old_nkeys
+	integer(kind=8) :: i, ii, n, n0, old_nkeys ! TODO: kind 4?
 	integer(kind=4), allocatable :: old_idx(:)
 	type(str_t), allocatable :: old_keys(:)
 	type(json_val_t), allocatable :: old_vals(:)
@@ -967,7 +1073,8 @@ subroutine move_val(src, dst)
 		call move_alloc(src%idx  , dst%idx)
 
 	case (ARR_TYPE)
-		call panic("array move_val not implemented yet")  ! TODO
+		dst%narr = src%narr
+		call move_alloc(src%arr, dst%arr)
 
 	case default
 		! Lightweight scalars are actually just copied
@@ -988,18 +1095,24 @@ recursive subroutine copy_val(dst, src)
 	case (OBJ_TYPE)
 		dst%nkeys = src%nkeys
 		dst%keys  = src%keys
+		dst%idx   = src%idx
 
-		! Recurse
 		allocate(dst%vals( size(src%vals) ))
 		do i = 1, size(src%vals)
+			! Recurse
 			if (.not. allocated(src%keys(i)%str)) cycle
 			call copy_val(dst%vals(i), src%vals(i))
 		end do
 
-		dst%idx  = src%idx
-
 	case (ARR_TYPE)
-		call panic("array move_val not implemented yet")  ! TODO
+		dst%narr = src%narr
+		!allocate(dst%arr( size(src%arr) ))
+		allocate(dst%arr( src%narr ))
+		!do i = 1, size(src%arr)
+		do i = 1, src%narr
+			! Recurse
+			call copy_val(dst%arr(i), src%arr(i))
+		end do
 
 	case default
 		dst%sca = src%sca
