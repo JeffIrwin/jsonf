@@ -525,7 +525,7 @@ subroutine test_float_jsons(nfail, ntot)
 	type(json_t) :: json
 	type(json_val_t) :: val
 
-	write(*,*) "Unit testing basic JSON strings ..."
+	write(*,*) "Unit testing floating point numbers ..."
 
 	call json%read_str('1.2')
 	val = json%get_val('')
@@ -552,6 +552,79 @@ subroutine test_float_jsons(nfail, ntot)
 	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 4", nfail, ntot)
 
 	! TODO: test floats in nested objects/arrays
+
+	call json%read_str('3.')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 3.d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 5", nfail, ntot)
+
+	! Note missing leading 0 is not supposed to be valid json
+	call json%read_str('.4')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = .4d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 6", nfail, ntot)
+
+	call json%read_str('.432')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = .432d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 6", nfail, ntot)
+
+	call json%read_str('+.432')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = .432d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 6", nfail, ntot)
+
+	call json%read_str('-.432')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = -.432d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 6", nfail, ntot)
+
+	call json%read_str('327.')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 327.d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 5", nfail, ntot)
+
+	call json%read_str('327.d5')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 327.d5
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 5", nfail, ntot)
+
+	call json%read_str('326.e11')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 326.d11
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 5", nfail, ntot)
+
+	call json%read_str('327.D+5')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 327.d+5
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 5", nfail, ntot)
+
+	call json%read_str('326.E-11')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 326.d-11
+	TEST(abs(val%sca%f64 - expect) <= 1.d-20, "test_float_jsons 5", nfail, ntot)
+
+	call json%read_str('-327.D+5')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = -327.d+5
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 5", nfail, ntot)
+
+	call json%read_str('-326.E-11')
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = -326.d-11
+	TEST(abs(val%sca%f64 - expect) <= 1.d-20, "test_float_jsons 5", nfail, ntot)
 
 end subroutine test_float_jsons
 
@@ -630,6 +703,48 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3", nfail, ntot)
+
+	str = '0'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.1", nfail, ntot)
+
+	str = '00'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = '0'
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.2", nfail, ntot)
+
+	str = '01'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = '1'
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.3", nfail, ntot)
+
+	str = '-2'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.4", nfail, ntot)
+
+	str = '+2'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = '2'
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.5", nfail, ntot)
+
+	str = '-234'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.6", nfail, ntot)
+
+	str = '+253'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = '253'
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.7", nfail, ntot)
 
 	str = '420'
 	call json%read_str(str)

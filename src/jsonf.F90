@@ -5,10 +5,8 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - add floats
-	!   * ints with + or - signs
-	!   * floats with lower- and upper-case e/E exponents
-	!   * optionally allow d/D exponents a la Fortran. default?
+	! - float improvements:
+	!   * add option to not allow d/D exponents a la Fortran. default?
 	! - error handling
 	!   * don't panic unless stop-on-error is requested
 	! - get_val() improvements:
@@ -22,6 +20,12 @@ module jsonf
 	!   * Fortran does not really have null, so we will need is_null() instead
 	!     of get_null()
 	! - write details in readme
+	! - expose less
+	!   * move as many implementation details as possible into something like
+	!     private.F90
+	!   * other modules, e.g. utils, should default private
+	!   * and/or, declare individual routines as `private`, though I'd prefer a
+	!     separate file. time to split anyway
 	! - test in other projects
 	!   * aoc-fortran pips solver
 	!   * ribbit?
@@ -97,15 +101,18 @@ module jsonf
 		integer(kind=4) :: nkeys = 0
 		type(str_t), allocatable :: keys(:)
 		type(json_val_t), allocatable :: vals(:)
+		integer(kind=4), allocatable :: idx(:)  ! for consistent output of object hashmap members
 
 		! Array members
 		integer(kind=4) :: narr = 0  ! not needed if we trim after reading? but that would block later post-read insertions
 		type(json_val_t), allocatable :: arr(:)  ! could re-use vals(:) but this might be less error-prone
 
-		! i32 should be ok. If a JSON object has 2 billion keys, it will be much
-		! more than 2 GB counting quotes and colons, even without whitespace and
-		! 1-char keys. Non-duplicate keys would have to be at least 4 or 5 chars
-		integer(kind=4), allocatable :: idx(:)    ! for consistent output of object hashmap members
+		! i32 should be ok for sizes and idx. If a JSON object has 2 billion
+		! keys, it will be much more than 2 GB counting quotes and colons, even
+		! without whitespace and 1-char keys. Non-duplicate keys would have to
+		! be at least 4 or 5 chars
+		!
+		! Values, of course need to be i64
 	end type json_val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
@@ -295,6 +302,10 @@ function lex(lexer) result(token)
 		! syntran
 		float_ = .false.
 		sb = new_str_builder()
+		if (is_sign(lexer%current_char)) then
+			call sb%push(lexer%current_char)
+			call lexer%next_char()
+		end if
 		do while (is_float_under(lexer%current_char))
 			float_ = float_ .or. .not. is_digit_under(lexer%current_char)
 			call sb%push(lexer%current_char)
