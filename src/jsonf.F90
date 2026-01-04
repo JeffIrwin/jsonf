@@ -673,6 +673,10 @@ function get_val_json(json, ptr) result(val)
 	type(json_val_t) :: val
 	!********
 
+	! If any backslash escape sequences should be processed in the ptr str, it
+	! could be done here.  See e.g. the cases with expected results 5 and 6
+	! ("/i\\j") in test_in9()
+
 	call get_val_core(json%root, ptr, 1, val)
 
 end function get_val_json
@@ -701,6 +705,7 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 		return
 	end if
 
+	! Split by '/' before handling '~' escapes
 	i = i0 + 1
 	do
 		if (i > len(ptr)) exit

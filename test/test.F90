@@ -367,16 +367,23 @@ subroutine test_in9(nfail, ntot)
 	expect_i64 = 4
 	TEST(val%sca%i64 == expect_i64, "test_in9 6", nfail, ntot)
 
+	! RFC:
+	!
+	!   Note that before processing a JSON string as a JSON Pointer,
+	!   backslash escape sequences must be unescaped.
+	!
+	! Fortran strings don't require any escaping to begin with, so I have less
+	! backslashes in these next two examples.  Not 100% sure if I'm reading the
+	! standard correctly though
+
 	!    "/i\\j"      5
-	! TODO?
-	!val = json%get_val('/i\\j')
+	!val = json%get_val('/i\\j')  ! maybe?
 	val = json%get_val('/i\j')
 	expect_i64 = 5
 	TEST(val%sca%i64 == expect_i64, "test_in9 7", nfail, ntot)
 
 	!    "/k\"l"      6
-	! TODO?
-	!val = json%get_val('/k\"l')
+	!val = json%get_val('/k\"l')  ! maybe?
 	val = json%get_val('/k"l')
 	expect_i64 = 6
 	TEST(val%sca%i64 == expect_i64, "test_in9 8", nfail, ntot)
