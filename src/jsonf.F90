@@ -508,13 +508,25 @@ recursive function val_to_str(json, val) result(str)
 	character(len = :), allocatable :: str
 	!********
 	! Don't need a str_builder here since json_val_t is a single value
+
+	if (.not. allocated(json%indent)) then
+		! I would just initialize this in the type declaration but Fortran is redacted
+		!
+		! TODO: dry?
+		json%indent = INDENT_DEFAULT
+	end if
+
 	select case (val%type)
 	case (STR_TYPE)
 		str = quote(escape(val%sca%str))
 	case (I64_TYPE)
 		str = to_str(val%sca%i64)
 	case (OBJ_TYPE)
+		!write(ERROR_UNIT, *) "indent_level -= ", json%indent_level
+		!json%indent_level = json%indent_level + 1
+		!write(ERROR_UNIT, *) "indent_level += ", json%indent_level
 		str = obj_to_str(json, val)
+		!json%indent_level = json%indent_level - 1
 	case default
 		call panic("val_to_str: unknown type "//kind_name(val%type))
 	end select
@@ -618,6 +630,7 @@ recursive function obj_to_str(json, obj) result(str)
 	if (.not. json%compact) call sb%push(LINE_FEED)
 	json%indent_level = json%indent_level + 1
 	indent = repeat(json%indent, json%indent_level)
+	write(ERROR_UNIT, *) "indent = "//quote(indent)
 
 	if (json%hashed_order) then
 		ii = 0

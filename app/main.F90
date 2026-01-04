@@ -47,13 +47,9 @@ subroutine app_echo_file(args)
 	call json%read_file(args%filename)
 	if (args%lint) return
 
-	call json%print(msg)
-
 	if (args%has_pointer) then
-		! TODO: probably don't want to always print json above, may be useful for now
-		! for debugging
-		print *, "pointer = "//quote(args%pointer)
-		print *, "len(pointer) = ", len(args%pointer)
+		!print *, "pointer = "//quote(args%pointer)
+		!print *, "len(pointer) = ", len(args%pointer)
 
 		val = json%get_val(args%pointer)
 		!call copy_val(val, json%get_val(args%pointer))
@@ -61,16 +57,22 @@ subroutine app_echo_file(args)
 		!print *, "val = "//val%to_str()
 		!print *, "done get_val()"
 		!print *, "printing val ..."
-		print *, "val = "//val_to_str(json, val)
+		!print *, "val = "//val_to_str(json, val)
+		write(*, "(a)") val_to_str(json, val)
 
+		return
 	end if
+
+	call json%print(msg)
 
 end subroutine app_echo_file
 
 subroutine app_echo_str(args)
 	type(args_t), intent(in) :: args
-	type(json_t) :: json
+	!********
 	character(len=:), allocatable :: msg
+	type(json_t) :: json
+	type(json_val_t) :: val
 
 	msg = ""
 	if (.not. (args%quiet .or. args%lint)) then
@@ -87,10 +89,24 @@ subroutine app_echo_str(args)
 	call json%read_str(args%str)
 	if (args%lint) return
 
+	if (args%has_pointer) then
+		!print *, "pointer = "//quote(args%pointer)
+		!print *, "len(pointer) = ", len(args%pointer)
+
+		val = json%get_val(args%pointer)
+		!call copy_val(val, json%get_val(args%pointer))
+
+		!print *, "val = "//val%to_str()
+		!print *, "done get_val()"
+		!print *, "printing val ..."
+		!print *, "val = "//val_to_str(json, val)
+		write(*, "(a)") val_to_str(json, val)
+
+		return
+	end if
+
 	call json%print(msg)
 	!call json%write("junk.json")
-
-	! TODO: handle args%pointer logic here like app_echo_file()
 
 end subroutine app_echo_str
 
