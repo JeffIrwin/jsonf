@@ -41,5 +41,23 @@ RUN ./bin/jsonf --string '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p
 RUN ./bin/jsonf --string '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}' --compact
 RUN ./bin/jsonf --string '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}' --quiet
 
-# TODO: check that linting returns errors or success properly
+# Check linting
+RUN ./bin/jsonf -s '{"a": 1}' --lint  # ok
+RUN ./bin/jsonf -s '{"a": 1,}' -l # warn trailing comma but ok
+
+# Use '!' to invert the bash exit code. These lints are expected to fail
+RUN ! ./bin/jsonf -s '{"a": 1,}' -l -Werror=commas
+#RUN ! ./bin/jsonf -s '{"a": 1,}' -l -Wno-commas  # ok
+RUN ! ./bin/jsonf -s '{"a": }' -l
+RUN ! ./bin/jsonf -s '{"a": ' -l
+RUN ! ./bin/jsonf -s '"unterminated string' -l
+RUN ! ./bin/jsonf -s '"unterminated string\"' -l
+RUN ! ./bin/jsonf -s '"unterminated string\" still' -l
+RUN ! ./bin/jsonf -s '"unterminated string\" still\"' -l
+RUN ./bin/jsonf -s '"terminated string\" still"' -l
+RUN ! ./bin/jsonf -s '{"a: 1}' -l
+RUN ! ./bin/jsonf -s '{"a": 1' -l
+
+# Do one more because I want green text at the end of the log
+RUN ./bin/jsonf -s '{"a": 1, "b": 2}'
 
