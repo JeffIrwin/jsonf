@@ -5,7 +5,7 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - add null, bools, floats
+	! - add floats
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
 	!   * optionally allow d/D exponents a la Fortran. default?
@@ -30,6 +30,8 @@ module jsonf
 	!   * test on windows, linux (macos?)
 	!   * test with different fortran compilers
 	!   * cmake
+	! - lint performance -- can we parse without saving anything?  don't store
+	!   anything in arrays or hashmaps etc.
 	! - unit tests must cover bad syntax -- it's important that they don't go
 	!   into an infinite loop on anything like unterminated strs (i just did
 	!   this :facepalm:)
@@ -159,9 +161,10 @@ module jsonf
 	end type lexer_t
 
 	integer, parameter :: &
-		!TRUE_TOKEN       = 25, &
-		!FALSE_TOKEN      = 24, &
-		NULL_KEYWORD     = 23, &  ! TODO: unused
+		BOOL_TOKEN       = 26, &
+		TRUE_TOKEN       = 25, & ! TODO: unused?
+		FALSE_TOKEN      = 24, &
+		BOOL_TYPE        = 23, &
 		NULL_TYPE        = 22, &
 		NULL_TOKEN       = 21, &
 		STR_STREAM       = 20, &
@@ -420,51 +423,33 @@ function lex(lexer) result(token)
 
 end function lex
 
-!integer function get_keyword_kind(text) result(kind)
-!	character(len = *), intent(in) :: text
-!	select case (text)
-!	!case ("true")
-!	!	kind = TRUE_KEYWORD
-!	!case ("false")
-!	!	kind = FALSE_KEYWORD
-!	case ("null")
-!		kind = NULL_KEYWORD
-!	case default
-!		kind = BAD_TOKEN
-!	end select
-!
-!	!print *, 'get_keyword_kind = ', kind
-!end function get_keyword_kind
-
-!token = new_keyword_token(start, text)
 function new_keyword_token(pos, text) result(token)
-	!integer, intent(in) :: kind
 	integer(kind=8), intent(in) :: pos
 	character(len=*), intent(in) :: text
-	!type(sca_t), intent(in), optional :: sca
 	type(token_t) :: token
 	!********
 	integer :: kind
 	type(sca_t) :: sca
 
 	select case (text)
-	!case ("true")
-	!	kind = TRUE_TOKEN
-	!case ("false")
-	!	kind = FALSE_TOKEN
+	case ("true")
+		!kind = TRUE_TOKEN
+		kind = BOOL_TOKEN
+		sca  = new_literal(BOOL_TYPE, bool = .true.)
+	case ("false")
+		!kind = FALSE_TOKEN
+		kind = BOOL_TOKEN
+		sca  = new_literal(BOOL_TYPE, bool = .false.)
+
 	case ("null")
-		!kind = NULL_TYPE
 		kind = NULL_TOKEN
-		!sca  = new_literal(I64_TYPE, i64 = i64)
 		sca  = new_literal(NULL_TYPE)
+
 	case default
 		kind = BAD_TOKEN
 	end select
 
-	token%kind = kind
-	token%pos  = pos
-	token%text = text
-	token%sca  = sca
+	token = new_token(kind, pos, text, sca)
 
 end function new_keyword_token
 
@@ -618,6 +603,9 @@ recursive function val_to_str(json, val) result(str)
 		str = quote(escape(val%sca%str))
 	case (I64_TYPE)
 		str = to_str(val%sca%i64)
+	case (BOOL_TYPE)
+		str = to_str(val%sca%bool)
+
 	case (NULL_TYPE)
 		str = "null"
 
@@ -802,6 +790,11 @@ subroutine parse_val(json, lexer, val)
 
 	case (I64_TOKEN)
 		val%type = I64_TYPE
+		val%sca = lexer%current_token%sca
+		call lexer%next_token()
+
+	case (BOOL_TOKEN)
+		val%type = BOOL_TYPE
 		val%sca = lexer%current_token%sca
 		call lexer%next_token()
 
@@ -1319,9 +1312,12 @@ function kind_name(kind)
 			"ARR_TYPE         ", & ! 18
 			"FILE_STREAM      ", & ! 19
 			"STR_STREAM       ", & ! 20
-			"NULL_TOKEN       ", & ! 21, &
-			"NULL_TYPE        ", & ! 22, &
-			"NULL_KEYWORD     ", & ! 23, &  ! TODO: unused
+			"NULL_TOKEN       ", & ! 21
+			"NULL_TYPE        ", & ! 22
+			"BOOL_TYPE        ", & ! 23
+			"FALSE_TOKEN      ", & ! 24
+			"TRUE_TOKEN       ", & ! 25
+			"BOOL_TOKEN       ", & ! 26
 			"unknown          "  & ! inf (trailing comma hack)
 		]
 

@@ -45,6 +45,7 @@ module jsonf__utils
 	interface to_str
 		procedure :: i32_to_str
 		procedure :: i64_to_str
+		procedure :: bool_to_str
 	end interface to_str
 
 	!********
@@ -423,6 +424,21 @@ function i64_to_str(int_) result(str)
 	write(buffer, "(i0)") int_
 	str = trim(buffer)
 end function i64_to_str
+
+!===============================================================================
+
+function bool_to_str(val) result(str)
+	logical, intent(in) :: val
+	character(len = :), allocatable :: str
+	!character :: buffer*16
+	!write(buffer, "(i0)") val
+	if (val) then
+		str = "true"
+	else
+		str = "false"
+	end if
+	!str = trim(buffer)
+end function bool_to_str
 
 !===============================================================================
 

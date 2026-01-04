@@ -559,6 +559,32 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.3", nfail, ntot)
 
+	! Booleans
+	str = 'true'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.4", nfail, ntot)
+
+	str = 'false'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.5", nfail, ntot)
+
+	str = '{"a":true}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.6", nfail, ntot)
+
+	str = '[false]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.7", nfail, ntot)
+
+	! Integers
 	str = '69'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -584,7 +610,7 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.2", nfail, ntot)
 
-	! Heterogeneous array
+	! Heterogeneous arrays
 	str = '[30,"hello"]'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -602,6 +628,12 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.4.1", nfail, ntot)
+
+	str = '["world",null,40,true]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.4.2", nfail, ntot)
 
 	! Nested arrays
 	str = '[[]]'
@@ -639,6 +671,12 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.6", nfail, ntot)
+
+	str = '[[300,false,true,8,null,null],[67,[64,true,"my-str",null,404]]]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.7", nfail, ntot)
 
 	str = '"my string"'
 	!str = '"my string'  ! unterminated str
@@ -681,6 +719,12 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 9.1", nfail, ntot)
+
+	str = '[{}]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 9.2", nfail, ntot)
 
 	! Trailing commas
 	str = '{"a": 1,}'
