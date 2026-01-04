@@ -5,10 +5,6 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - empty objects, trailing commas, lint option, before arrays
-	!   * trailing commas are silent by default, warned during linting, or error
-	!     if -Werror=commas is given
-	!   * -Wno-commas makes linting silent
 	! - add bools, floats, and null
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
@@ -104,7 +100,7 @@ module jsonf
 		type(json_val_t) :: root
 
 		logical :: &
-			allow_duplicate_keys  = .true., &
+			error_duplicate_keys  = .false., &
 			error_trailing_commas = .false., &
 			warn_trailing_commas  = .false., &
 			first_duplicate       = .false.
@@ -934,7 +930,7 @@ subroutine set_map_core(json, obj, key, val)
 			exit
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
-			if (.not. json%allow_duplicate_keys) then
+			if (json%error_duplicate_keys) then
 				call panic("duplicate key "//quote(key))
 			end if
 			if (.not. json%first_duplicate) then

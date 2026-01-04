@@ -15,12 +15,11 @@ subroutine args_to_json_config(args, json)
 	json%compact = args%compact
 	json%first_duplicate = args%first_duplicate
 
-	json%allow_duplicate_keys = .not. args%no_dup  ! maybe rethink logical inversion here
+	json%error_duplicate_keys  = args%error_dup
 	json%warn_trailing_commas  = args%warn_commas
 	json%error_trailing_commas = args%error_commas
 
 	if (args%lint) then
-		!json%warn_trailing_commas  = .true.
 		json%warn_trailing_commas  = .not. args%warn_no_commas
 	end if
 
