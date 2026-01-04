@@ -9,7 +9,10 @@ module jsonf
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
 	!   * optionally allow d/D exponents a la Fortran. default?
+	! - error handling
+	!   * don't panic unless stop-on-error is requested
 	! - get_val() improvements:
+	!   * optional 'found' out-arg
 	!   * name get_val() or just get() ?
 	!   * add typed versions: get_i64(), get_bool(), etc.
 	!   * throw error for bad type
@@ -161,10 +164,10 @@ module jsonf
 	end type lexer_t
 
 	integer, parameter :: &
-		BOOL_TOKEN       = 26, &
-		TRUE_TOKEN       = 25, & ! TODO: unused?
-		FALSE_TOKEN      = 24, &
-		BOOL_TYPE        = 23, &
+		F64_TYPE         = 26, &
+		F64_TOKEN        = 25, &
+		BOOL_TYPE        = 24, &
+		BOOL_TOKEN       = 23, &
 		NULL_TYPE        = 22, &
 		NULL_TOKEN       = 21, &
 		STR_STREAM       = 20, &
@@ -245,9 +248,10 @@ function lex(lexer) result(token)
 	type(token_t) :: token
 	!********
 	character(len=:), allocatable :: text, text_strip
-	integer :: io, kind
+	integer :: io
 	integer(kind=8) :: start, end_, i64
 	logical :: float_
+	real(kind=8) :: f64
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
 
@@ -274,36 +278,57 @@ function lex(lexer) result(token)
 		return
 	end if
 
+	! Note, beware the overlap between is_float_under() and is_letter(), thus
+	! the intertwined order dependence here.  Neither 'null', 'true', or 'false'
+	! happen to start with any float, sign, or exponent ('dDeE') characters, so
+	! this should be ok
+
 	! TODO: don't allow underscores as thousands separators by default, but
 	! optionally allow any custom separator
-	if (is_digit_under(lexer%current_char)) then
+	!if (is_digit_under(lexer%current_char)) then
+	if (is_float_under(lexer%current_char)) then
 		! Numeric decimal integer or float
 
+		! Don't worry about manually checking valid float formats. Just let the
+		! read() fail later
+		!
+		! You'll never have to parse arithmetic like `1+2` in json, unlike
+		! syntran
 		float_ = .false.
 		sb = new_str_builder()
 		do while (is_float_under(lexer%current_char))
 
-			if (is_sign(lexer%current_char) .and. .not. &
-				is_expo(lexer%previous_char)) exit
-
+			!if (is_sign(lexer%current_char) .and. .not. &
+			!	is_expo(lexer%previous_char)) exit
 			float_ = float_ .or. .not. is_digit_under(lexer%current_char)
-
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
+
 		end do
 		end_ = lexer%pos
 
 		text = sb%trim()
 		text_strip = rm_char(text, "_")
+		!print *, "text = ", text
+		!if (text == "") stop
 
 		if (float_) then
-			call panic("float parsing not implemented yet")  ! TODO
+			read(text_strip, *, iostat = io) f64
+			if (DEBUG > 0) write(*,*) "lex: parsed f64 = "//to_str(f64)
+			if (io == exit_success) then
+				sca   = new_literal(F64_TYPE, f64 = f64)
+				token = new_token(F64_TOKEN, start, text, sca)
+			else
+				call panic("can't read float")
+			end if
 		else  ! i64
 			read(text_strip, *, iostat = io) i64
 			if (DEBUG > 0) write(*,*) "lex: parsed i64 = "//to_str(i64)
 			if (io == exit_success) then
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, start, text, sca)
+			else
+				call panic("can't read integer")
 			end if
 		end if
 
@@ -351,41 +376,27 @@ function lex(lexer) result(token)
 		return
 	end if
 
-	!if (is_letter(lexer%current()) .or. lexer%current() == '_') then
 	if (is_letter(lexer%current_char)) then
-
+		! There are no variable identifiers in json, so that simplifies things
 		sb = new_str_builder()
-		!do while (is_alphanum(lexer%current()) .or. lexer%current() == '_')
 		do while (is_letter(lexer%current_char))
-			!lexer%pos = lexer%pos + 1
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
-		!text = lexer%text(start: lexer%pos-1)
 		text = sb%trim()
-
-		! This block handles booleans as well as identifiers, but note that it
-		! does not set the value here like the is_digit_under() case for numbers
-		! above.  The boolean value is not set until parse_primary_expr().
-
 		token = new_keyword_token(start, text)
-		!kind = get_keyword_kind(text)
-		!token = new_token(kind, start, text)
-		!!token%unit_ = lexer%unit_
-
 		return
-
 	end if
 
 	select case (lexer%current_char)
 
-	! TODO: it's probably better to parse unary +- operators as part of the
-	! number instead of as a standalone operator. JSON does not have binary
-	! operators, so we can keep it simple
-	case ("+")
-		token = new_token(PLUS_TOKEN, lexer%pos, lexer%current_char)
-	case ("-")
-		token = new_token(MINUS_TOKEN, lexer%pos, lexer%current_char)
+	!! It's probably better to parse unary +- operators as part of the
+	!! number instead of as a standalone operator. JSON does not have binary
+	!! operators, so we can keep it simple
+	!case ("+")
+	!	token = new_token(PLUS_TOKEN, lexer%pos, lexer%current_char)
+	!case ("-")
+	!	token = new_token(MINUS_TOKEN, lexer%pos, lexer%current_char)
 
 	case ("{")
 		token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current_char)
@@ -398,6 +409,7 @@ function lex(lexer) result(token)
 	case (":")
 		token = new_token(COLON_TOKEN, lexer%pos, lexer%current_char)
 	case (",")
+		!print *, "COMMA_TOKEN"
 		token = new_token(COMMA_TOKEN, lexer%pos, lexer%current_char)
 
 	! TODO: take user input instead of hard-coded comment char. Since it's a
@@ -433,11 +445,9 @@ function new_keyword_token(pos, text) result(token)
 
 	select case (text)
 	case ("true")
-		!kind = TRUE_TOKEN
 		kind = BOOL_TOKEN
 		sca  = new_literal(BOOL_TYPE, bool = .true.)
 	case ("false")
-		!kind = FALSE_TOKEN
 		kind = BOOL_TOKEN
 		sca  = new_literal(BOOL_TYPE, bool = .false.)
 
@@ -601,6 +611,8 @@ recursive function val_to_str(json, val) result(str)
 	select case (val%type)
 	case (STR_TYPE)
 		str = quote(escape(val%sca%str))
+	case (F64_TYPE)
+		str = to_str(val%sca%f64)
 	case (I64_TYPE)
 		str = to_str(val%sca%i64)
 	case (BOOL_TYPE)
@@ -788,6 +800,11 @@ subroutine parse_val(json, lexer, val)
 		val%sca = lexer%current_token%sca
 		call lexer%next_token()
 
+	case (F64_TOKEN)
+		val%type = F64_TYPE
+		val%sca = lexer%current_token%sca
+		call lexer%next_token()
+
 	case (I64_TOKEN)
 		val%type = I64_TYPE
 		val%sca = lexer%current_token%sca
@@ -809,7 +826,7 @@ subroutine parse_val(json, lexer, val)
 		call parse_arr(json, lexer, val)
 
 	case default
-		print *, "kind = ", lexer%current_kind()
+		!print *, "kind = ", lexer%current_kind()
 		call panic("unexpected value type in object of kind " // &
 			kind_name(lexer%current_kind()))
 	end select
@@ -1314,10 +1331,10 @@ function kind_name(kind)
 			"STR_STREAM       ", & ! 20
 			"NULL_TOKEN       ", & ! 21
 			"NULL_TYPE        ", & ! 22
-			"BOOL_TYPE        ", & ! 23
-			"FALSE_TOKEN      ", & ! 24
-			"TRUE_TOKEN       ", & ! 25
-			"BOOL_TOKEN       ", & ! 26
+			"BOOL_TOKEN       ", & ! 23
+			"BOOL_TYPE        ", & ! 24
+			"F64_TOKEN        ", & ! 25
+			"F64_TYPE         ", & ! 26
 			"unknown          "  & ! inf (trailing comma hack)
 		]
 

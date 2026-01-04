@@ -43,6 +43,7 @@ module jsonf__utils
 	!********
 
 	interface to_str
+		procedure :: f64_to_str
 		procedure :: i32_to_str
 		procedure :: i64_to_str
 		procedure :: bool_to_str
@@ -407,6 +408,16 @@ subroutine unit_test_split()
 end subroutine unit_test_split
 !===============================================================================
 
+function f64_to_str(val) result(str)
+	real(kind = 8), intent(in) :: val
+	character(len = :), allocatable :: str
+	character :: buffer*24
+	write(buffer, "(es24.14)") val
+	str = trim(adjustl(buffer))
+end function f64_to_str
+
+!===============================================================================
+
 function i32_to_str(int_) result(str)
 	integer(kind = 4), intent(in) :: int_
 	character(len = :), allocatable :: str
@@ -430,14 +441,11 @@ end function i64_to_str
 function bool_to_str(val) result(str)
 	logical, intent(in) :: val
 	character(len = :), allocatable :: str
-	!character :: buffer*16
-	!write(buffer, "(i0)") val
 	if (val) then
 		str = "true"
 	else
 		str = "false"
 	end if
-	!str = trim(buffer)
 end function bool_to_str
 
 !===============================================================================

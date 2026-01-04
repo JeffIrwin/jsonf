@@ -515,6 +515,32 @@ subroutine test_sort(nfail, ntot)
 
 end subroutine  test_sort
 
+subroutine test_float_jsons(nfail, ntot)
+	! Float formatting makes it annoying to test str output, so this is a
+	! separate test routine that relies on get_val()
+	integer, intent(inout) :: nfail, ntot
+	!********
+	real(kind=8) :: expect
+	real(kind=8), parameter :: TOL = 1.d-9
+	type(json_t) :: json
+	type(json_val_t) :: val
+
+	write(*,*) "Unit testing basic JSON strings ..."
+
+	call json%read_str("1.2")
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 1.2d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 1", nfail, ntot)
+
+	call json%read_str("3.4")
+	val = json%get_val('')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 3.4d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 2", nfail, ntot)
+
+end subroutine test_float_jsons
+
 subroutine test_basic_jsons(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
@@ -769,6 +795,7 @@ program test
 
 	call test_sort(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
+	call test_float_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)
 	call test_in2(nfail, ntot)
 	call test_in3(nfail, ntot)
