@@ -725,14 +725,16 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	!do j = i0+1, i-1
 	do while (j < i-1)
 		j = j + 1
-		if (ptr(j:j+1) == "~0") then
-			call sb%push('~')
-			j = j + 1
-			cycle
-		else if (ptr(j:j+1) == "~1") then
-			call sb%push('/')
-			j = j + 1
-			cycle
+		if (j+1 < len(ptr)) then
+			if (ptr(j:j+1) == "~0") then
+				call sb%push('~')
+				j = j + 1
+				cycle
+			else if (ptr(j:j+1) == "~1") then
+				call sb%push('/')
+				j = j + 1
+				cycle
+			end if
 		end if
 		call sb%push(ptr(j:j))
 	end do
