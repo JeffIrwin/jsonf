@@ -524,6 +524,32 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4", nfail, ntot)
 
+	! Arrays
+	str = '[0]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.1", nfail, ntot)
+
+	str = '[10,20]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.2", nfail, ntot)
+
+	! Heterogeneous array
+	str = '[30,"hello"]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.3", nfail, ntot)
+
+	str = '["world",40]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.4", nfail, ntot)
+
 	str = '"my string"'
 	!str = '"my string'  ! unterminated str
 	!print *, "str = ", str
@@ -552,12 +578,19 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 8", nfail, ntot)
 
+	! Empty array
+	str = '[]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 9", nfail, ntot)
+
 	! Empty object
 	str = '{}'
 	call json%read_str(str)
 	str_out = json%to_str()
 	expect = str
-	TEST(is_str_eq(str_out, expect), "test_basic_jsons 9", nfail, ntot)
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 9.1", nfail, ntot)
 
 	! Trailing commas
 	str = '{"a": 1,}'

@@ -17,9 +17,6 @@ module jsonf
 	!   * test on windows, linux (macos?)
 	!   * test with different fortran compilers
 	!   * cmake
-	! - test array top-level json
-	!   * get file/token streaming down before starting array work
-	! - test heterogeneous arrays
 	! - unit tests must cover bad syntax -- it's important that they don't go
 	!   into an infinite loop on anything like unterminated strs (i just did
 	!   this :facepalm:)
