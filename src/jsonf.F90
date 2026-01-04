@@ -285,7 +285,6 @@ function lex(lexer) result(token)
 
 	! TODO: don't allow underscores as thousands separators by default, but
 	! optionally allow any custom separator
-	!if (is_digit_under(lexer%current_char)) then
 	if (is_float_under(lexer%current_char)) then
 		! Numeric decimal integer or float
 
@@ -297,20 +296,15 @@ function lex(lexer) result(token)
 		float_ = .false.
 		sb = new_str_builder()
 		do while (is_float_under(lexer%current_char))
-
-			!if (is_sign(lexer%current_char) .and. .not. &
-			!	is_expo(lexer%previous_char)) exit
 			float_ = float_ .or. .not. is_digit_under(lexer%current_char)
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
-
 		end do
 		end_ = lexer%pos
 
 		text = sb%trim()
 		text_strip = rm_char(text, "_")
 		!print *, "text = ", text
-		!if (text == "") stop
 
 		if (float_) then
 			read(text_strip, *, iostat = io) f64
@@ -319,7 +313,7 @@ function lex(lexer) result(token)
 				sca   = new_literal(F64_TYPE, f64 = f64)
 				token = new_token(F64_TOKEN, start, text, sca)
 			else
-				call panic("can't read float")
+				call panic("bad float number: "//text)
 			end if
 		else  ! i64
 			read(text_strip, *, iostat = io) i64
@@ -328,7 +322,7 @@ function lex(lexer) result(token)
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, start, text, sca)
 			else
-				call panic("can't read integer")
+				call panic("bad integer number: "//text)
 			end if
 		end if
 
@@ -390,14 +384,6 @@ function lex(lexer) result(token)
 
 	select case (lexer%current_char)
 
-	!! It's probably better to parse unary +- operators as part of the
-	!! number instead of as a standalone operator. JSON does not have binary
-	!! operators, so we can keep it simple
-	!case ("+")
-	!	token = new_token(PLUS_TOKEN, lexer%pos, lexer%current_char)
-	!case ("-")
-	!	token = new_token(MINUS_TOKEN, lexer%pos, lexer%current_char)
-
 	case ("{")
 		token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current_char)
 	case ("}")
@@ -409,7 +395,6 @@ function lex(lexer) result(token)
 	case (":")
 		token = new_token(COLON_TOKEN, lexer%pos, lexer%current_char)
 	case (",")
-		!print *, "COMMA_TOKEN"
 		token = new_token(COMMA_TOKEN, lexer%pos, lexer%current_char)
 
 	! TODO: take user input instead of hard-coded comment char. Since it's a

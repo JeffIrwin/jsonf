@@ -527,17 +527,31 @@ subroutine test_float_jsons(nfail, ntot)
 
 	write(*,*) "Unit testing basic JSON strings ..."
 
-	call json%read_str("1.2")
+	call json%read_str('1.2')
 	val = json%get_val('')
 	!print *, "val = ", val_to_str(json, val)
 	expect = 1.2d0
 	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 1", nfail, ntot)
 
-	call json%read_str("3.4")
+	call json%read_str('3.4')
 	val = json%get_val('')
 	!print *, "val = ", val_to_str(json, val)
 	expect = 3.4d0
 	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 2", nfail, ntot)
+
+	call json%read_str('{"foo": 5.6}')
+	val = json%get_val('/foo')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 5.6d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 3", nfail, ntot)
+
+	call json%read_str('[true, 7.8, null]')
+	val = json%get_val('/1')
+	!print *, "val = ", val_to_str(json, val)
+	expect = 7.8d0
+	TEST(abs(val%sca%f64 - expect) <= TOL, "test_float_jsons 4", nfail, ntot)
+
+	! TODO: test floats in nested objects/arrays
 
 end subroutine test_float_jsons
 
