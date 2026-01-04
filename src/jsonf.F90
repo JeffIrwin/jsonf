@@ -736,10 +736,12 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 		end if
 		call sb%push(ptr(j:j))
 	end do
-	key = sb%trim()
 
-	!key = ptr(i0+1: i-1)
-	print *, "key = ", key
+	key = sb%trim()
+	!key = escape(sb%trim())
+	!!key = ptr(i0+1: i-1)
+
+	!print *, "key = ", key
 
 	select case (val%type)
 	case (ARR_TYPE)

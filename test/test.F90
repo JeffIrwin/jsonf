@@ -367,17 +367,29 @@ subroutine test_in9(nfail, ntot)
 	expect_i64 = 4
 	TEST(val%sca%i64 == expect_i64, "test_in9 6", nfail, ntot)
 
-	!!    "/i\\j"      5
-	!! TODO
+	!    "/i\\j"      5
+	! TODO?
 	!val = json%get_val('/i\\j')
-	!expect_i64 = 5
-	!TEST(val%sca%i64 == expect_i64, "test_in9 7", nfail, ntot)
+	val = json%get_val('/i\j')
+	expect_i64 = 5
+	TEST(val%sca%i64 == expect_i64, "test_in9 7", nfail, ntot)
 
 	!    "/k\"l"      6
+	! TODO?
+	!val = json%get_val('/k\"l')
+	val = json%get_val('/k"l')
+	expect_i64 = 6
+	TEST(val%sca%i64 == expect_i64, "test_in9 8", nfail, ntot)
 
 	!    "/ "         7
+	val = json%get_val('/ ')
+	expect_i64 = 7
+	TEST(val%sca%i64 == expect_i64, "test_in9 9", nfail, ntot)
 
 	!    "/m~0n"      8
+	val = json%get_val('/m~0n')
+	expect_i64 = 8
+	TEST(val%sca%i64 == expect_i64, "test_in9 10", nfail, ntot)
 
 end subroutine test_in9
 
