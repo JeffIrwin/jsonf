@@ -11,9 +11,14 @@ contains
 subroutine args_to_json_config(args, json)
 	type(args_t), intent(in) :: args
 	type(json_t), intent(inout) :: json
+
 	json%compact = args%compact
-	json%allow_duplicate_keys = .not. args%no_dup  ! maybe rethink logical inversion here
 	json%first_duplicate = args%first_duplicate
+
+	json%allow_duplicate_keys = .not. args%no_dup  ! maybe rethink logical inversion here
+	json%warn_trailing_commas  = args%warn_commas
+	json%error_trailing_commas = args%error_commas
+
 end subroutine
 
 subroutine app_echo_file(args)

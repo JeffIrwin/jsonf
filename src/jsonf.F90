@@ -8,6 +8,7 @@ module jsonf
 	! - empty objects, trailing commas, lint option, before arrays
 	!   * trailing commas are silent by default, warned during linting, or error
 	!     if -Werror=commas is given
+	!   * -Wno-commas makes linting silent
 	! - add bools, floats, and null
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
@@ -95,9 +96,6 @@ module jsonf
 		integer(kind=4), allocatable :: idx(:)    ! for consistent output of object hashmap members
 
 		!type(arr_t) :: arr  ! TODO: arrays
-		contains
-			!procedure, pass(dst) :: copy => copy_val
-			!generic, public :: assignment(=) => copy
 	end type json_val_t
 
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
@@ -106,8 +104,10 @@ module jsonf
 		type(json_val_t) :: root
 
 		logical :: &
-			allow_duplicate_keys = .true., &
-			first_duplicate      = .false.
+			allow_duplicate_keys  = .true., &
+			error_trailing_commas = .false., &
+			warn_trailing_commas  = .false., &
+			first_duplicate       = .false.
 
 		! String and print output formatting options
 		character(len=:), allocatable :: indent
@@ -666,7 +666,8 @@ subroutine parse_val(json, lexer, val)
 		call panic("array parsing not implemented yet")  ! TODO
 		!call parse_arr(val, tokens, pos)
 	case default
-		call panic("unexpected value type in object")
+		call panic("unexpected value type in object of kind " // &
+			kind_name(lexer%current_kind()))
 	end select
 end subroutine parse_val
 
@@ -793,11 +794,7 @@ subroutine parse_obj(json, lexer, obj)
 	obj%nkeys = 0
 
 	do
-		if (lexer%current_kind() == RBRACE_TOKEN) then
-			! End of object
-			call lexer%next_token()
-			exit
-		end if
+		if (lexer%current_kind() == RBRACE_TOKEN) exit
 
 		call lexer%match(STR_TOKEN)
 		key = lexer%previous_token%sca%str
@@ -810,19 +807,20 @@ subroutine parse_obj(json, lexer, obj)
 		! Store the key-value pair in the object
 		call set_map(json, obj, key, val)
 
-		! Expect comma or end of object
-		select case (lexer%current_kind())
-		case (COMMA_TOKEN)
-			! TODO: test trailing commas. Make them an error by default but provide option to allow
-			call lexer%next_token()
-		case (RBRACE_TOKEN)
-			! TODO: do we really need exit condition at top and bottom of loop? Make sure we handle empty objects
-			call lexer%next_token()
-			exit
-		case default
-			call panic("expected ',' or '}' after key-value pair in object")
-		end select
+		if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
+	!print *, "current  = ", kind_name(lexer%current_kind())
+	!print *, "previous = ", kind_name(lexer%previous_token%kind)
+
+	if (lexer%previous_token%kind == COMMA_TOKEN) then
+		if (json%error_trailing_commas) then
+			call panic("trailing comma in object")
+		end if
+		if (json%warn_trailing_commas) then
+			write(*, "(a)") WARN_STR//"trailing comma in object"
+		end if
+	end if
+	call lexer%match(RBRACE_TOKEN)
 
 	! We might be able to deallocate obj%idx(:) here if no duplicate keys were
 	! found. However, memory savings aren't that much -- every key and val takes
@@ -985,11 +983,7 @@ recursive subroutine copy_val(dst, src)
 	select case (src%type)
 	case (OBJ_TYPE)
 		dst%nkeys = src%nkeys
-		!call move_alloc(src%keys , dst%keys)
-		!call move_alloc(src%vals , dst%vals)
-		!call move_alloc(src%idx  , dst%idx)
-
-		dst%keys = src%keys
+		dst%keys  = src%keys
 
 		! Recurse
 		allocate(dst%vals( size(src%vals) ))
@@ -997,7 +991,6 @@ recursive subroutine copy_val(dst, src)
 			if (.not. allocated(src%keys(i)%str)) cycle
 			call copy_val(dst%vals(i), src%vals(i))
 		end do
-		!dst%vals = src%vals
 
 		dst%idx  = src%idx
 

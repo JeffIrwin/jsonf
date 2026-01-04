@@ -10,8 +10,10 @@ module jsonf__args
 		logical :: &
 			help            = .false., &
 			compact         = .false., &
-			no_dup          = .false., &
+			no_dup          = .false., &  ! TODO: rename error_dup
 			first_duplicate = .false., &
+			warn_commas     = .false., &
+			error_commas    = .false., &
 			quiet           = .false., &
 			tokens          = .false., &
 			has_pointer     = .false., &
@@ -84,6 +86,12 @@ function parse_args() result(args)
 
 		case ("-c", "--compact")
 			args%compact = .true.
+
+		case ("-Wcommas")
+			args%warn_commas = .true.
+
+		case ("-Werror=commas")
+			args%error_commas = .true.
 
 		case ("-d", "--no-dup", "--no-duplicate-keys")
 			args%no_dup = .true.
