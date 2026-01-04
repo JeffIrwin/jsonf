@@ -71,8 +71,7 @@ module jsonf
 
 	type json_val_t
 		! JSON value type -- scalar, array, or object
-		!
-		! TODO: maybe rename to json_val_t? It might end up user-facing
+
 		integer :: type
 		type(sca_t) :: sca
 
@@ -82,7 +81,7 @@ module jsonf
 		type(json_val_t), allocatable :: vals(:)
 
 		! Array members
-		integer(kind=4) :: narr = 0  ! TODO: not needed if we trim after reading?
+		integer(kind=4) :: narr = 0  ! not needed if we trim after reading? but that would block later post-read insertions
 		type(json_val_t), allocatable :: arr(:)  ! could re-use vals(:) but this might be less error-prone
 
 		! i32 should be ok. If a JSON object has 2 billion keys, it will be much

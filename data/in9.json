@@ -1,5 +1,5 @@
    {
-      "comment": "\"foo\": [\"bar\", \"baz\"]",
+      "foo": ["bar", "baz"],
       "": 0,
       "a/b": 1,
       "c%d": 2,

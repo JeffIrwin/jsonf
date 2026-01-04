@@ -85,6 +85,25 @@ subroutine test_in1(nfail, ntot)
 
 end subroutine test_in1
 
+subroutine test_in2(nfail, ntot)
+	! Arrays
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect
+	type(json_t) :: json
+
+	filename = "data/in2.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	json%compact = .true.
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+	expect = '{"a":1,"b":2,"c":"my str","d":[10,20,30]}'
+	TEST(is_str_eq(str_out, expect), "test_in6 1", nfail, ntot)
+
+end subroutine test_in2
+
 subroutine test_in3(nfail, ntot)
 	! Nested objects.  Inner objects have some of the same keys as the outer
 	! objects, although these are of course not duplicate keys because they
@@ -321,8 +340,6 @@ subroutine test_in9(nfail, ntot)
 	call json%read_file(filename)
 	!print *, "str_out 1 = ", str_out
 
-	! TODO: update in9.json after arrays are supported
-
 	! Empty str means whole document.  This means leading '/' is not optional
 	! for other cases
 	!
@@ -332,7 +349,7 @@ subroutine test_in9(nfail, ntot)
 	val = json%get_val('')
 	json%compact = .true.
 	str_out = val_to_str(json, val)
-	expect_str = '{"comment":"\"foo\": [\"bar\", \"baz\"]","":0,"a/b":1,"c%d":2,"e^f":3,"g|h":4,"i\\j":5,"k\"l":6," ":7,"m~n":8}'
+	expect_str = '{"foo":["bar","baz"],"":0,"a/b":1,"c%d":2,"e^f":3,"g|h":4,"i\\j":5,"k\"l":6," ":7,"m~n":8}'
 	!print *, expect_str
 	!print *, str_out
 	TEST(str_out == expect_str, "test_in9 1", nfail, ntot)
@@ -448,6 +465,8 @@ subroutine test_sort(nfail, ntot)
 	!********
 	integer :: i
 	integer, allocatable :: v(:)
+
+	write(*,*) "Unit testing sorting routines ..."
 
 	v = [72, 16, 17, 3, 53, 99, 1]
 	call sort(v)
@@ -650,7 +669,7 @@ program test
 	call test_sort(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)
-	! TODO: test in2 with basic arrays
+	call test_in2(nfail, ntot)
 	call test_in3(nfail, ntot)
 	call test_in4(nfail, ntot)
 	call test_in5(nfail, ntot)
