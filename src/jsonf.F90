@@ -146,7 +146,6 @@ module jsonf
 				match => lexer_match, &
 				next_char  => lexer_next_char, &
 				next_token => lexer_next_token, &
-				current => lexer_current, &
 				current_kind => lexer_current_kind
 	end type lexer_t
 
@@ -181,12 +180,6 @@ function get_jsonf_vers()
 		to_str(JSONF_MINOR) // "." // &
 		to_str(JSONF_PATCH)
 end function get_jsonf_vers
-
-character function lexer_current(lexer)
-	! Current char
-	class(lexer_t) :: lexer
-	lexer_current = lexer%current_char
-end function lexer_current
 
 subroutine lexer_next_char(lexer)
 	class(lexer_t), intent(inout) :: lexer
@@ -251,12 +244,12 @@ function lex(lexer) result(token)
 	end if
 
 	start = lexer%pos
-	if (DEBUG > 2) write(*,*) "lex: current char = "//quote(lexer%current())
+	if (DEBUG > 2) write(*,*) "lex: current char = "//quote(lexer%current_char)
 
-	if (is_whitespace(lexer%current())) then
+	if (is_whitespace(lexer%current_char)) then
 		sb = new_str_builder()
-		do while (is_whitespace(lexer%current()))
-			call sb%push(lexer%current())
+		do while (is_whitespace(lexer%current_char))
+			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
 		text = sb%trim()
@@ -266,19 +259,19 @@ function lex(lexer) result(token)
 
 	! TODO: don't allow underscores as thousands separators by default, but
 	! optionally allow any custom separator
-	if (is_digit_under(lexer%current())) then
+	if (is_digit_under(lexer%current_char)) then
 		! Numeric decimal integer or float
 
 		float_ = .false.
 		sb = new_str_builder()
-		do while (is_float_under(lexer%current()))
+		do while (is_float_under(lexer%current_char))
 
-			if (is_sign(lexer%current()) .and. .not. &
+			if (is_sign(lexer%current_char) .and. .not. &
 				is_expo(lexer%previous_char)) exit
 
-			float_ = float_ .or. .not. is_digit_under(lexer%current())
+			float_ = float_ .or. .not. is_digit_under(lexer%current_char)
 
-			call sb%push(lexer%current())
+			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
 		end_ = lexer%pos
@@ -301,27 +294,27 @@ function lex(lexer) result(token)
 		return
 	end if
 
-	if (lexer%current() == '"') then
+	if (lexer%current_char == '"') then
 		! String literal
 		call lexer%next_char()  ! skip opening quote
 		start = lexer%pos
 
 		sb = new_str_builder()
 		do
-			!print *, "lexer current = ", lexer%current()
+			!print *, "lexer current = ", lexer%current_char
 
 			! TODO: test str escape rules. Only 8 characters or a unicode sequence are allowed to follow a backslash
-			if (lexer%current() == "\") then
+			if (lexer%current_char == "\") then
 				call lexer%next_char()
-				call sb%push(lexer%current())
+				call sb%push(lexer%current_char)
 				call lexer%next_char()
 			end if
 
-			if (lexer%current() == '"' .or. lexer%stream%is_eof) then
+			if (lexer%current_char == '"' .or. lexer%stream%is_eof) then
 				exit
 			end if
 
-			call sb%push(lexer%current())
+			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
 		text = sb%trim()
@@ -341,36 +334,36 @@ function lex(lexer) result(token)
 		return
 	end if
 
-	select case (lexer%current())
+	select case (lexer%current_char)
 	case ("+")
-		token = new_token(PLUS_TOKEN, lexer%pos, lexer%current())
+		token = new_token(PLUS_TOKEN, lexer%pos, lexer%current_char)
 	case ("-")
-		token = new_token(MINUS_TOKEN, lexer%pos, lexer%current())
+		token = new_token(MINUS_TOKEN, lexer%pos, lexer%current_char)
 	case ("{")
-		token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current())
+		token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current_char)
 	case ("}")
-		token = new_token(RBRACE_TOKEN, lexer%pos, lexer%current())
+		token = new_token(RBRACE_TOKEN, lexer%pos, lexer%current_char)
 	case ("[")
-		token = new_token(LBRACKET_TOKEN, lexer%pos, lexer%current())
+		token = new_token(LBRACKET_TOKEN, lexer%pos, lexer%current_char)
 	case ("]")
-		token = new_token(RBRACKET_TOKEN, lexer%pos, lexer%current())
+		token = new_token(RBRACKET_TOKEN, lexer%pos, lexer%current_char)
 	case (":")
-		token = new_token(COLON_TOKEN, lexer%pos, lexer%current())
+		token = new_token(COLON_TOKEN, lexer%pos, lexer%current_char)
 	case (",")
-		token = new_token(COMMA_TOKEN, lexer%pos, lexer%current())
+		token = new_token(COMMA_TOKEN, lexer%pos, lexer%current_char)
 	case ("#")
-		token = new_token(HASH_TOKEN, lexer%pos, lexer%current())
+		token = new_token(HASH_TOKEN, lexer%pos, lexer%current_char)
 
 	case default
-		!print *, 'bad token text = ', quote(lexer%current())
+		!print *, 'bad token text = ', quote(lexer%current_char)
 
-		token = new_token(BAD_TOKEN, lexer%pos, lexer%current())
+		token = new_token(BAD_TOKEN, lexer%pos, lexer%current_char)
 		!! TODO: implement span_t and diagnostics
-		!span = new_span(lexer%pos, len(lexer%current()))
+		!span = new_span(lexer%pos, len(lexer%current_char))
 		!call lexer%diagnostics%push( &
 		!	err_unexpected_char(lexer%context, &
-		!	span, lexer%current()))
-		call panic("unexpected character: "//quote(lexer%current()))
+		!	span, lexer%current_char))
+		call panic("unexpected character: "//quote(lexer%current_char))
 
 	end select
 
@@ -404,6 +397,9 @@ function new_lexer(stream) result(lexer)
 	! we have them
 	lexer%current_char = lexer%stream%get()
 	lexer%current_token = lexer%lex()
+
+	! Skip leading whitespace
+	if (lexer%current_kind() == WHITESPACE_TOKEN) call lexer%next_token()
 
 end function new_lexer
 
@@ -650,7 +646,7 @@ subroutine parse_val(json, lexer, val)
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: val
 	!********
-	select case (lexer%current_token%kind)
+	select case (lexer%current_kind())
 	case (STR_TOKEN)
 		!print *, "value (string) = ", lexer%current_token%sca%str
 		val%type = STR_TYPE

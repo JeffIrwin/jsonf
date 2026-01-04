@@ -306,6 +306,30 @@ subroutine test_in8(nfail, ntot)
 
 end subroutine test_in8
 
+subroutine test_in9(nfail, ntot)
+	! Get keys by "json pointer" path string -- RFC 6901
+	!
+	! Nested objects, case-sensitive keys, empty string keys, space keys
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename, str_out, expect_str
+	integer(kind=8) :: expect_i64
+	type(json_t) :: json
+	type(json_val_t) :: val
+
+	filename = "data/in9.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	call json%read_file(filename)
+	str_out = json%to_str()
+	!print *, "str_out = ", str_out
+
+	!val = json%get_val('/foo')
+	!expect_i64 = 1337
+	!TEST(val%sca%i64 == expect_i64, "test_in9 1", nfail, ntot)
+
+end subroutine test_in9
+
 logical function is_sorted_i32(v) result(sorted)
 	integer, intent(in) :: v(:)
 	integer :: n
@@ -485,6 +509,7 @@ program test
 	call test_in6(nfail, ntot)
 	call test_in7(nfail, ntot)
 	call test_in8(nfail, ntot)
+	call test_in9(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
