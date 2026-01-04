@@ -255,7 +255,14 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 2", nfail, ntot)
 
-	! Leading path separator is optional, consecutive separators are ok
+	! Leading path separator is optional, consecutive separators treated as one
+	!
+	! TODO: this is actually wrong since consecutive separators and trailing
+	! separators should represent empty-string keys. Optional leader is probably
+	! ok. Or maybe not. Need to test all ~10 examples in section 5 of the RFC:
+	!
+	!     https://www.rfc-editor.org/rfc/rfc6901
+	!
 	val = json%get_val('bar///FOO//')
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 3", nfail, ntot)

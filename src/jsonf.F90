@@ -672,27 +672,25 @@ subroutine parse_val(json, lexer, val)
 end subroutine parse_val
 
 function get_val_json(json, ptr) result(val)
+	! User-facing function
 	class(json_t), intent(in) :: json
 	character(len=*), intent(in) :: ptr
 	type(json_val_t) :: val
 	!********
 	type(str_vec_t) :: tokens
 	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
-	!call get_val_core(json%root, ptr, val)
 	call get_val_core(json%root, tokens%vec(1: tokens%len), val)
 end function get_val_json
 
-!recursive subroutine get_val_core(val, ptr, outval)
 recursive subroutine get_val_core(val, tokens, outval)
+	! Private subroutine
 	type(json_val_t), intent(in) :: val
-	!character(len=*), intent(in) :: ptr
 	type(str_t), intent(in) :: tokens(:)
 	type(json_val_t) :: outval
 	!********
 	character(len=:), allocatable :: first
 	integer(kind=4) :: hash, idx, n
 	logical :: found
-	!type(json_val_t) :: tmpval
 	type(str_t), allocatable :: rest(:)
 
 	if (size(tokens) == 0) then
@@ -703,39 +701,29 @@ recursive subroutine get_val_core(val, tokens, outval)
 		!
 		! Could even check type and warn if not scalar/primitive
 		call copy_val(outval, val)
-		!outval = val
-
 		return
 	end if
 
 	first = tokens(1)%str
 	rest = tokens(2:)
-	print *, "first = ", first
+	!print *, "first = ", first
 
 	select case (val%type)
 	case (ARR_TYPE)
 		call panic("array type not implemented in get_val_json()")
 	case (OBJ_TYPE)
 
-		!! Works, but there's a val copy inside
-		!!call get_map(val, first, outval, found)
-		!call get_map(val, first, tmpval, found)
-
-		!********
-		! inline get map to avoid copy
-
-		!subroutine get_map(obj, key, val, found)
+		! Inline get map to avoid copy. Could keep it as a routine but return an
+		! index instead of copying val
 		found = .false.
 		hash = djb2_hash(first)
 		n = size(val%keys)
 		idx = modulo(hash, n) + 1
-
 		do
 			if (.not. allocated(val%keys(idx)%str)) then
 				! Empty slot, key not found
 				exit
 			else if (is_str_eq(val%keys(idx)%str, first)) then
-				! Key found
 				found = .true.
 				exit
 			else
@@ -743,63 +731,17 @@ recursive subroutine get_val_core(val, tokens, outval)
 				idx = modulo(idx, n) + 1
 			end if
 		end do
-		! end get map
-		!********
-
 		if (.not. found) then
 			call panic("key "//quote(first)//" not found")
 		end if
 
-		!call get_val_core(tmpval, rest, outval)
 		call get_val_core(val%vals(idx), rest, outval)
 
 	case default
 		call panic("bad type in get_val_json()")
 	end select
 
-	!! TODO
-	!outval%type = STR_TYPE
-	!outval%sca%str = "replace me"
-
 end subroutine get_val_core
-
-!function get_val_json(json, ptr) result(val)
-!	class(json_t), intent(in) :: json
-!	character(len=*), intent(in) :: ptr
-!	type(json_val_t) :: val
-!	!********
-!	character(len=:), allocatable :: token
-!	integer :: i
-!	logical :: found
-!	type(json_val_t) :: tmp_val
-!	type(str_vec_t) :: tokens
-!	print *, "*********************************"
-!	print *, "starting get_val_json()"
-!	call copy_val(val, json%root)
-!	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
-!	do i = 1, i32(tokens%len)
-!		token = tokens%vec(i)%str
-!		print *, "token = "//quote(token)
-!		select case (val%type)
-!		case (ARR_TYPE)
-!			call panic("array type not implemented in get_val_json()")
-!		case (OBJ_TYPE)
-!			!print *, "obj type"
-!			!print *, "moving tmp val ..."
-!			call move_val(val, tmp_val)
-!			!print *, "getting map ..."
-!			call get_map(json, tmp_val, token, val, found)
-!			if (.not. found) then
-!				call panic("key "//quote(token)//" not found")
-!			end if
-!
-!		case default
-!			call panic("bad type in get_val_json()")
-!		end select
-!	end do
-!	!print *, "val i64 = "//to_str(val%sca%i64)
-!	!print *, "finished get_val_json()"
-!end function get_val_json
 
 subroutine parse_obj(json, lexer, obj)
 	type(json_t), intent(inout) :: json
