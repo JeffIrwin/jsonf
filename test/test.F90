@@ -552,6 +552,26 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 8", nfail, ntot)
 
+	! Empty object
+	str = '{}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 9", nfail, ntot)
+
+	! Trailing commas
+	str = '{"a": 1,}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = '{"a":1}'  ! comma is removed from output
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 10", nfail, ntot)
+
+	str = '{"a": 1, "b": 2,}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = '{"a":1,"b":2}'  ! last comma is removed from output
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 10", nfail, ntot)
+
 end subroutine test_basic_jsons
 
 end module jsonf__test

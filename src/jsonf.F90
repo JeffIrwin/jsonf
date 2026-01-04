@@ -5,10 +5,14 @@ module jsonf
 	implicit none
 
 	! TODO:
+	! - empty objects, trailing commas, lint option, before arrays
+	!   * trailing commas are silent by default, warned during linting, or error
+	!     if -Werror=commas is given
 	! - add bools, floats, and null
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
 	!   * optionally allow d/D exponents a la Fortran. default?
+	! - spellcheck for bad keys and bad cmd args
 	! - add other stream types
 	!   * stdin
 	!   * network? probably not
