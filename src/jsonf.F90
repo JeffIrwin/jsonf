@@ -793,7 +793,10 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 
 	select case (val%type)
 	case (ARR_TYPE)
-		call panic("array type not implemented in get_val_json()")
+		idx = read_i32(key) ! TODO: iostat
+		!print *, "idx = ", idx
+		call get_val_core(val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
+
 	case (OBJ_TYPE)
 
 		idx = get_map_idx(val, key, found)

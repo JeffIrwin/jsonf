@@ -354,10 +354,16 @@ subroutine test_in9(nfail, ntot)
 	!print *, str_out
 	TEST(str_out == expect_str, "test_in9 1", nfail, ntot)
 
-	! TODO: 'foo' tests after arrays
-	!
 	!    "/foo"       ["bar", "baz"]
+	val = json%get_val('/foo')
+	str_out = val_to_str(json, val)
+	expect_str = '["bar","baz"]'
+	TEST(str_out == expect_str, "test_in9 1.1", nfail, ntot)
+
 	!    "/foo/0"     "bar"
+	val = json%get_val('/foo/0')
+	expect_str = 'bar'  ! note there are no inner quotes
+	TEST(val%sca%str == expect_str, "test_in9 1.2", nfail, ntot)
 
 	!    "/"          0
 	val = json%get_val('/')
