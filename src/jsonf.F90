@@ -6,7 +6,13 @@ module jsonf
 
 	! TODO:
 	! - float improvements:
+	!   * auto convert i64 overflows to f64?
 	!   * add option to not allow d/D exponents a la Fortran. default?
+	! - add a `strict` option (json_t member and cmd arg) which just turns on
+	!   other options, e.g. error_trailing_commas, require leading digit before
+	!   decimal point, etc.
+	!   * probably keep error_duplicate_keys orthogonal to this since standard
+	!     allows dupes
 	! - error handling
 	!   * don't panic unless stop-on-error is requested
 	! - get_val() improvements:
@@ -84,7 +90,7 @@ module jsonf
 		! *not* arrays or objects
 		!
 		! TODO: equivalence union?
-		integer :: type
+		integer :: type  ! TODO: is the sca_t%type used, or is the parent json_val_t%type sufficient?
 		logical :: bool
 		integer(kind=8) :: i64
 		real(kind=8) :: f64
@@ -797,6 +803,8 @@ subroutine parse_val(json, lexer, val)
 
 	case (F64_TOKEN)
 		val%type = F64_TYPE
+		! Note these technically copy more sca members than required, e.g. f64
+		! doesn't need to initialize the sca%i64 member
 		val%sca = lexer%current_token%sca
 		call lexer%next_token()
 
@@ -974,7 +982,8 @@ subroutine parse_arr(json, lexer, arr)
 			deallocate(old_arr)
 		end if
 
-		! Store the value
+		! Store the value. Could avoid temp `val` by resizing before parsing,
+		! arrays are simpler than objects
 		call move_val(val, arr%arr(idx))
 
 		if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
