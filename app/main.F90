@@ -19,6 +19,11 @@ subroutine args_to_json_config(args, json)
 	json%warn_trailing_commas  = args%warn_commas
 	json%error_trailing_commas = args%error_commas
 
+	if (args%lint) then
+		!json%warn_trailing_commas  = .true.
+		json%warn_trailing_commas  = .not. args%warn_no_commas
+	end if
+
 end subroutine
 
 subroutine app_echo_file(args)
@@ -29,7 +34,7 @@ subroutine app_echo_file(args)
 	type(json_val_t) :: val
 
 	msg = ""
-	if (.not. args%quiet) then
+	if (.not. (args%quiet .or. args%lint)) then
 		write(*, "(a)") "Reading JSON from file: "//quote(args%filename)
 		msg = "JSON content from file:"
 	end if
@@ -41,6 +46,8 @@ subroutine app_echo_file(args)
 	end if
 
 	call json%read_file(args%filename)
+	if (args%lint) return
+
 	call json%print(msg)
 
 	if (args%has_pointer) then
@@ -67,7 +74,7 @@ subroutine app_echo_str(args)
 	character(len=:), allocatable :: msg
 
 	msg = ""
-	if (.not. args%quiet) then
+	if (.not. (args%quiet .or. args%lint)) then
 		write(*, "(a)") "Reading JSON from string:"//LINE_FEED//"<<<"//args%str//">>>"
 		msg = "JSON content from string:"
 	end if
@@ -79,6 +86,8 @@ subroutine app_echo_str(args)
 	end if
 
 	call json%read_str(args%str)
+	if (args%lint) return
+
 	call json%print(msg)
 	!call json%write("junk.json")
 
@@ -96,7 +105,7 @@ program main
 
 	args = parse_args()
 	
-	if (.not. args%quiet) then
+	if (.not. (args%quiet .or. args%lint)) then
 		write(*, "(a)") fg_bright_magenta//"jsonf "//get_jsonf_vers()//color_reset
 	end if
 
@@ -108,7 +117,7 @@ program main
 
 	end if
 
-	call jsonf_exit(EXIT_SUCCESS, args%quiet)
+	call jsonf_exit(EXIT_SUCCESS, args%quiet .or. args%lint)
 
 end program main
 

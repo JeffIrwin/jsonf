@@ -35,9 +35,11 @@ RUN fpm install --prefix . --profile release
 RUN ./bin/jsonf -s '{"a123": 69, "x456": 420}'
 RUN ./bin/jsonf -s '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}'
 
-# Run all the cmd args
+# Cover some cmd args
 RUN ./bin/jsonf --help
 RUN ./bin/jsonf --string '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}' --tokens
 RUN ./bin/jsonf --string '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}' --compact
 RUN ./bin/jsonf --string '{"a123": 69, "nestedaoeuaoeuhtnsaoeuhtnsaoehutns": {"p": 1337, "q": 9999}, "x456": 420}' --quiet
+
+# TODO: check that linting returns errors or success properly
 

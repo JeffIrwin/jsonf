@@ -9,9 +9,11 @@ module jsonf__args
 
 		logical :: &
 			help            = .false., &
+			lint            = .false., &
 			compact         = .false., &
 			no_dup          = .false., &  ! TODO: rename error_dup
 			first_duplicate = .false., &
+			warn_no_commas  = .false., &
 			warn_commas     = .false., &
 			error_commas    = .false., &
 			quiet           = .false., &
@@ -41,7 +43,7 @@ function get_arg(i)
 	if (io /= 0) then
 		call panic("can't get length of command argument index "//to_str(i))
 	end if
-	print *, "arg "//to_str(i)//" len_ = ", len_
+	!print *, "arg "//to_str(i)//" len_ = ", len_
 
 	allocate(character(len = len_) :: get_arg)
 
@@ -78,6 +80,9 @@ function parse_args() result(args)
 		case ("-h", "-help", "--help")
 			args%help = .true.
 
+		case ("-l", "--lint")
+			args%lint = .true.
+
 		case ("-t", "--tokens")
 			args%tokens = .true.
 
@@ -87,9 +92,11 @@ function parse_args() result(args)
 		case ("-c", "--compact")
 			args%compact = .true.
 
+		! gcc-style warning/error options
+		case ("-Wno-commas")
+			args%warn_no_commas = .true.
 		case ("-Wcommas")
 			args%warn_commas = .true.
-
 		case ("-Werror=commas")
 			args%error_commas = .true.
 
@@ -165,13 +172,17 @@ function parse_args() result(args)
 		write(*,*) "    jsonf -c | --compact"
 		write(*,*) "    jsonf -d | --no-dup"
 		write(*,*) "    jsonf -f | --first-dup"
+		write(*,*) "    jsonf -l | --lint"
 		write(*,*) "    jsonf -q | --quiet"
 		write(*,*) "    jsonf -t | --tokens"
+		! TODO: document -Werror=commas, -Wcommas, etc.  This is getting long.
+		! Maybe short help and long help options
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
 		write(*,*) "    --help       Show this help"
 		write(*,*) "    FILE.json    Input JSON filename"
 		write(*,*) "    --string     Input JSON string"
+		write(*,*) "    --lint       Check JSON for syntax errors"
 		write(*,*) "    --compact    Format compactly without whitespace"
 		write(*,*) "    --first-dup  Keep first duplicate key, default last"
 		write(*,*) "    --no-dup     Do not allow duplicate keys"
