@@ -232,7 +232,7 @@ end subroutine test_in7
 subroutine test_in8(nfail, ntot)
 	! Get keys by "json pointer" path string -- RFC 6901
 	!
-	! Nested objects
+	! Nested objects, case-sensitive keys, empty string keys, space keys
 	integer, intent(inout) :: nfail, ntot
 	!********
 	character(len=:), allocatable :: filename, str_out, expect_str
@@ -251,19 +251,12 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 1337
 	TEST(val%sca%i64 == expect_i64, "test_in8 1", nfail, ntot)
 
-	val = json%get_val('/bar/FOO/')
+	val = json%get_val('/bar/FOO')
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 2", nfail, ntot)
 
-	! Leading path separator is optional, consecutive separators treated as one
-	!
-	! TODO: this is actually wrong since consecutive separators and trailing
-	! separators should represent empty-string keys. Optional leader is probably
-	! ok. Or maybe not. Need to test all ~10 examples in section 5 of the RFC:
-	!
-	!     https://www.rfc-editor.org/rfc/rfc6901
-	!
-	val = json%get_val('bar///FOO//')
+	! Leading path separator is optional
+	val = json%get_val('bar/FOO')
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 3", nfail, ntot)
 
@@ -288,10 +281,12 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 420
 	TEST(val%sca%i64 == expect_i64, "test_in8 8", nfail, ntot)
 
-	!! TODO: empty space key (after last "/") doesn't work
-	!val = json%get_val('/baz/bar/')
-	!expect_str = "kicks"
-	!TEST(val%sca%str == expect_str, "test_in8 9", nfail, ntot)
+	! Empty space key after last "/"
+	val = json%get_val('/baz/bar/')
+	expect_str = "kicks"
+	TEST(val%sca%str == expect_str, "test_in8 9", nfail, ntot)
+
+	! TODO: add tests for empty keys in middle and start of path
 
 end subroutine test_in8
 

@@ -5,7 +5,6 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - test empty str keys
 	! - add bools, floats, and null
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
@@ -674,27 +673,31 @@ end subroutine parse_val
 function get_val_json(json, ptr) result(val)
 	! User-facing function
 	class(json_t), intent(in) :: json
-	character(len=*), intent(in) :: ptr
+	character(len=*), intent(in) :: ptr  ! RFC 6901 path string
 	type(json_val_t) :: val
 	!********
-	type(str_vec_t) :: tokens
-	tokens = split(ptr, "/")  ! TODO: do proper lexing, avoid big copies, handle escapes, etc.
-	call get_val_core(json%root, tokens%vec(1: tokens%len), val)
+	integer :: i0
+
+	i0 = 0  ! optional leading "/"
+	if (ptr(1:1) == "/") i0 = 1
+	call get_val_core(json%root, ptr, i0, val)
+
 end function get_val_json
 
-recursive subroutine get_val_core(val, tokens, outval)
+recursive subroutine get_val_core(val, ptr, i0, outval)
 	! Private subroutine
 	type(json_val_t), intent(in) :: val
-	type(str_t), intent(in) :: tokens(:)
+	character(len=*), intent(in) :: ptr
+	integer, intent(in) :: i0  ! index of last '/' separator in ptr path string
 	type(json_val_t) :: outval
 	!********
-	character(len=:), allocatable :: first
+	character(len=:), allocatable :: key
+	integer :: i
 	integer(kind=4) :: idx
 	logical :: found
-	type(str_t), allocatable :: rest(:)
 
-	if (size(tokens) == 0) then
-		! Base case
+	if (i0 > len(ptr)) then
+		! Base case: whole path has been walked
 
 		! Hopefully this is a small copy, unless user is doing something weird
 		! like querying the root
@@ -704,20 +707,27 @@ recursive subroutine get_val_core(val, tokens, outval)
 		return
 	end if
 
-	first = tokens(1)%str
-	rest = tokens(2:)
-	!print *, "first = ", first
+	i = i0 + 1
+	do
+		! TODO: handle RFC escape rules
+		if (i > len(ptr)) exit
+		if (ptr(i:i) == "/") exit
+		i = i + 1
+	end do
+
+	key = ptr(i0+1: i-1)
+	!print *, "key = ", key
 
 	select case (val%type)
 	case (ARR_TYPE)
 		call panic("array type not implemented in get_val_json()")
 	case (OBJ_TYPE)
 
-		idx = get_map_idx(val, first, found)
+		idx = get_map_idx(val, key, found)
 		if (.not. found) then
-			call panic("key "//quote(first)//" not found")
+			call panic("key "//quote(key)//" not found")
 		end if
-		call get_val_core(val%vals(idx), rest, outval)
+		call get_val_core(val%vals(idx), ptr, i, outval)
 
 	case default
 		call panic("bad type in get_val_json()")
