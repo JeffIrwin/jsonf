@@ -23,23 +23,20 @@ module jsonf
 	!   * invalid tokens
 	!   * unterminated strings
 	!   * invalid numbers, e.g. bad floats that look almost like a float
-	! - test nested arrays
 	! - cmd args:
-	!   * lint-only or dry-run option
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
 	!   * stop-on-error on "assert". need better error handling first
 	! - check json-fortran, jq, and other similar projects for features to add
 	! - test re-entry with re-using one object to load multiple JSON inputs in
 	!   sequence. might find bugs with things that need to be deallocated first
-	! - prune unused code copied from other template projects (blarg etc.)
 	! - test large files
 	! - test unicode in strings
 	!   * note that hex literals can be part of a unicode sequence in JSON, but
 	!     numeric literals are never hex, octal, or binary
 	! - test escape sequences in strings
-	!   * \" done
-	!   * \n, \t, \\, \/, \b, \f, \r, \uXXXX TBD
+	!   * \", \\ done
+	!   * \n, \t, \/, \b, \f, \r, \uXXXX TBD
 	! - test comments -- nonstandard but use "#" or another char if requested by some option
 	! - test diagnostics reporting line/column numbers
 

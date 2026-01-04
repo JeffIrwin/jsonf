@@ -550,6 +550,31 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.4", nfail, ntot)
 
+	! Nested arrays
+	str = '[[]]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.5", nfail, ntot)
+
+	str = '[[100],[67,64]]'  ! different sizes
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.5", nfail, ntot)
+
+	str = '[[200,7],[67,64]]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.5", nfail, ntot)
+
+	str = '[[300,8],[67,[64,35,404]]]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.5", nfail, ntot)
+
 	str = '"my string"'
 	!str = '"my string'  ! unterminated str
 	!print *, "str = ", str
