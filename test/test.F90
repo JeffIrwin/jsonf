@@ -251,6 +251,9 @@ subroutine test_in8(nfail, ntot)
 	! Get keys by "json pointer" path string -- RFC 6901
 	!
 	! Nested objects, case-sensitive keys, empty string keys, space keys
+	!
+	! TODO: make a more complicated json pointer array test. in9 only covers a
+	! single-level array
 	integer, intent(inout) :: nfail, ntot
 	!********
 	character(len=:), allocatable :: filename, expect_str!, str_out
@@ -537,6 +540,25 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = '{"a":1}'
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2", nfail, ntot)
 
+	! Null
+	str = 'null'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.1", nfail, ntot)
+
+	str = '{"a":null}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.2", nfail, ntot)
+
+	str = '[null]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 2.3", nfail, ntot)
+
 	str = '69'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -575,6 +597,12 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.4", nfail, ntot)
 
+	str = '["world",null,40]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.4.1", nfail, ntot)
+
 	! Nested arrays
 	str = '[[]]'
 	call json%read_str(str)
@@ -599,6 +627,18 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.5", nfail, ntot)
+
+	str = '[[300,8],[67,[64,"my-str",404]]]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.6", nfail, ntot)
+
+	str = '[[300,8,null,null],[67,[64,"my-str",null,404]]]'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 4.6", nfail, ntot)
 
 	str = '"my string"'
 	!str = '"my string'  ! unterminated str
@@ -654,6 +694,17 @@ subroutine test_basic_jsons(nfail, ntot)
 	str_out = json%to_str()
 	expect = '{"a":1,"b":2}'  ! last comma is removed from output
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 10", nfail, ntot)
+
+	str = '{"a":1,"b":2,"c":null}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	expect = str
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 11", nfail, ntot)
+	str = '{"a":1,"b":2,"c":null,}'
+	call json%read_str(str)
+	str_out = json%to_str()
+	!expect = str  ! re-use last expect value
+	TEST(is_str_eq(str_out, expect), "test_basic_jsons 12", nfail, ntot)
 
 end subroutine test_basic_jsons
 

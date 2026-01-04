@@ -5,10 +5,23 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - add bools, floats, and null
+	! - add null, bools, floats
 	!   * ints with + or - signs
 	!   * floats with lower- and upper-case e/E exponents
 	!   * optionally allow d/D exponents a la Fortran. default?
+	! - get_val() improvements:
+	!   * name get_val() or just get() ?
+	!   * add typed versions: get_i64(), get_bool(), etc.
+	!   * throw error for bad type
+	!   * get_vec_i64(), get_vec_bool(), etc.
+	!   * i think json-fortran has something like get_matrix(). obviously there
+	!     should be restrictions, like each sub-array must be the same size
+	!   * Fortran does not really have null, so we will need is_null() instead
+	!     of get_null()
+	! - write details in readme
+	! - test in other projects
+	!   * aoc-fortran pips solver
+	!   * ribbit?
 	! - spellcheck for bad keys and bad cmd args
 	! - add other stream types
 	!   * stdin
@@ -146,6 +159,11 @@ module jsonf
 	end type lexer_t
 
 	integer, parameter :: &
+		!TRUE_TOKEN       = 25, &
+		!FALSE_TOKEN      = 24, &
+		NULL_KEYWORD     = 23, &  ! TODO: unused
+		NULL_TYPE        = 22, &
+		NULL_TOKEN       = 21, &
 		STR_STREAM       = 20, &
 		FILE_STREAM      = 19, &
 		ARR_TYPE         = 18, &
@@ -224,7 +242,7 @@ function lex(lexer) result(token)
 	type(token_t) :: token
 	!********
 	character(len=:), allocatable :: text, text_strip
-	integer :: io
+	integer :: io, kind
 	integer(kind=8) :: start, end_, i64
 	logical :: float_
 	type(str_builder_t) :: sb
@@ -235,7 +253,7 @@ function lex(lexer) result(token)
 	end if
 
 	if (lexer%stream%is_eof) then
-		token = new_token(EOF_TOKEN, lexer%pos, null_char)
+		token = new_token(EOF_TOKEN, lexer%pos, NULL_CHAR)
 		return
 	end if
 
@@ -330,11 +348,42 @@ function lex(lexer) result(token)
 		return
 	end if
 
+	!if (is_letter(lexer%current()) .or. lexer%current() == '_') then
+	if (is_letter(lexer%current_char)) then
+
+		sb = new_str_builder()
+		!do while (is_alphanum(lexer%current()) .or. lexer%current() == '_')
+		do while (is_letter(lexer%current_char))
+			!lexer%pos = lexer%pos + 1
+			call sb%push(lexer%current_char)
+			call lexer%next_char()
+		end do
+		!text = lexer%text(start: lexer%pos-1)
+		text = sb%trim()
+
+		! This block handles booleans as well as identifiers, but note that it
+		! does not set the value here like the is_digit_under() case for numbers
+		! above.  The boolean value is not set until parse_primary_expr().
+
+		token = new_keyword_token(start, text)
+		!kind = get_keyword_kind(text)
+		!token = new_token(kind, start, text)
+		!!token%unit_ = lexer%unit_
+
+		return
+
+	end if
+
 	select case (lexer%current_char)
+
+	! TODO: it's probably better to parse unary +- operators as part of the
+	! number instead of as a standalone operator. JSON does not have binary
+	! operators, so we can keep it simple
 	case ("+")
 		token = new_token(PLUS_TOKEN, lexer%pos, lexer%current_char)
 	case ("-")
 		token = new_token(MINUS_TOKEN, lexer%pos, lexer%current_char)
+
 	case ("{")
 		token = new_token(LBRACE_TOKEN, lexer%pos, lexer%current_char)
 	case ("}")
@@ -347,6 +396,10 @@ function lex(lexer) result(token)
 		token = new_token(COLON_TOKEN, lexer%pos, lexer%current_char)
 	case (",")
 		token = new_token(COMMA_TOKEN, lexer%pos, lexer%current_char)
+
+	! TODO: take user input instead of hard-coded comment char. Since it's a
+	! variable it will have to be outside of select case which only works on
+	! constant strings
 	case ("#")
 		token = new_token(HASH_TOKEN, lexer%pos, lexer%current_char)
 
@@ -367,11 +420,59 @@ function lex(lexer) result(token)
 
 end function lex
 
-function new_token(kind, pos, text, sca) result(token)
+!integer function get_keyword_kind(text) result(kind)
+!	character(len = *), intent(in) :: text
+!	select case (text)
+!	!case ("true")
+!	!	kind = TRUE_KEYWORD
+!	!case ("false")
+!	!	kind = FALSE_KEYWORD
+!	case ("null")
+!		kind = NULL_KEYWORD
+!	case default
+!		kind = BAD_TOKEN
+!	end select
+!
+!	!print *, 'get_keyword_kind = ', kind
+!end function get_keyword_kind
+
+!token = new_keyword_token(start, text)
+function new_keyword_token(pos, text) result(token)
+	!integer, intent(in) :: kind
+	integer(kind=8), intent(in) :: pos
+	character(len=*), intent(in) :: text
+	!type(sca_t), intent(in), optional :: sca
+	type(token_t) :: token
+	!********
 	integer :: kind
-	integer(kind=8) :: pos
-	character(len=*) :: text
-	type(sca_t), optional :: sca
+	type(sca_t) :: sca
+
+	select case (text)
+	!case ("true")
+	!	kind = TRUE_TOKEN
+	!case ("false")
+	!	kind = FALSE_TOKEN
+	case ("null")
+		!kind = NULL_TYPE
+		kind = NULL_TOKEN
+		!sca  = new_literal(I64_TYPE, i64 = i64)
+		sca  = new_literal(NULL_TYPE)
+	case default
+		kind = BAD_TOKEN
+	end select
+
+	token%kind = kind
+	token%pos  = pos
+	token%text = text
+	token%sca  = sca
+
+end function new_keyword_token
+
+function new_token(kind, pos, text, sca) result(token)
+	integer, intent(in) :: kind
+	integer(kind=8), intent(in) :: pos
+	character(len=*), intent(in) :: text
+	type(sca_t), intent(in), optional :: sca
 	type(token_t) :: token
 
 	token%kind = kind
@@ -517,11 +618,16 @@ recursive function val_to_str(json, val) result(str)
 		str = quote(escape(val%sca%str))
 	case (I64_TYPE)
 		str = to_str(val%sca%i64)
+	case (NULL_TYPE)
+		str = "null"
+
 	case (OBJ_TYPE)
 		str = obj_to_str(json, val)
 	case (ARR_TYPE)
 		str = arr_to_str(json, val)
+
 	case default
+		write(ERROR_UNIT, *) "type = ", val%type
 		call panic("val_to_str: unknown type "//kind_name(val%type))
 	end select
 end function val_to_str
@@ -693,15 +799,24 @@ subroutine parse_val(json, lexer, val)
 		val%type = STR_TYPE
 		val%sca = lexer%current_token%sca
 		call lexer%next_token()
+
 	case (I64_TOKEN)
 		val%type = I64_TYPE
 		val%sca = lexer%current_token%sca
 		call lexer%next_token()
+
+	case (NULL_TOKEN)
+		val%type = NULL_TYPE
+		val%sca = lexer%current_token%sca
+		call lexer%next_token()
+
 	case (LBRACE_TOKEN)
 		call parse_obj(json, lexer, val)
 	case (LBRACKET_TOKEN)
 		call parse_arr(json, lexer, val)
+
 	case default
+		print *, "kind = ", lexer%current_kind()
 		call panic("unexpected value type in object of kind " // &
 			kind_name(lexer%current_kind()))
 	end select
@@ -792,18 +907,19 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	!print *, "key = ", key
 
 	select case (val%type)
-	case (ARR_TYPE)
-		idx = read_i32(key) ! TODO: iostat
-		!print *, "idx = ", idx
-		call get_val_core(val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
 
 	case (OBJ_TYPE)
-
 		idx = get_map_idx(val, key, found)
 		if (.not. found) then
 			call panic("key "//quote(key)//" not found")
 		end if
 		call get_val_core(val%vals(idx), ptr, i, outval)
+
+	case (ARR_TYPE)
+		idx = read_i32(key) ! TODO: iostat
+		!print *, "idx = ", idx
+		! TODO: check bounds
+		call get_val_core(val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
 
 	case default
 		call panic("bad type in get_val_json()")
@@ -1203,6 +1319,9 @@ function kind_name(kind)
 			"ARR_TYPE         ", & ! 18
 			"FILE_STREAM      ", & ! 19
 			"STR_STREAM       ", & ! 20
+			"NULL_TOKEN       ", & ! 21, &
+			"NULL_TYPE        ", & ! 22, &
+			"NULL_KEYWORD     ", & ! 23, &  ! TODO: unused
 			"unknown          "  & ! inf (trailing comma hack)
 		]
 
