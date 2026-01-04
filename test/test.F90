@@ -198,7 +198,7 @@ subroutine test_in7(nfail, ntot)
 	! Basic test
 	integer, intent(inout) :: nfail, ntot
 	!********
-	character(len=:), allocatable :: filename, str_out
+	character(len=:), allocatable :: filename!, str_out
 	integer :: expect_i32
 	type(json_t) :: json
 	type(json_val_t) :: val
@@ -207,24 +207,22 @@ subroutine test_in7(nfail, ntot)
 	write(*,*) "Unit testing file "//quote(filename)//" ..."
 
 	call json%read_file(filename)
-	str_out = json%to_str()
+	!str_out = json%to_str()
 	!print *, "str_out = ", str_out
 
-	val = json%get_val('foo')
-	expect_i32 = 1337
-	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
-
-	! Leading path separator is optional, unless the first object has an
-	! empty-string key
 	val = json%get_val('/foo')
 	expect_i32 = 1337
 	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
 
-	val = json%get_val('bar')
+	val = json%get_val('/foo')
+	expect_i32 = 1337
+	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
+
+	val = json%get_val('/bar')
 	expect_i32 = 420
 	TEST(val%sca%i64 == expect_i32, "test_in7 2", nfail, ntot)
 
-	val = json%get_val('baz')
+	val = json%get_val('/baz')
 	expect_i32 = 69
 	TEST(val%sca%i64 == expect_i32, "test_in7 3", nfail, ntot)
 
@@ -236,7 +234,7 @@ subroutine test_in8(nfail, ntot)
 	! Nested objects, case-sensitive keys, empty string keys, space keys
 	integer, intent(inout) :: nfail, ntot
 	!********
-	character(len=:), allocatable :: filename, str_out, expect_str
+	character(len=:), allocatable :: filename, expect_str!, str_out
 	integer(kind=8) :: expect_i64
 	type(json_t) :: json
 	type(json_val_t) :: val
@@ -245,7 +243,7 @@ subroutine test_in8(nfail, ntot)
 	write(*,*) "Unit testing file "//quote(filename)//" ..."
 
 	call json%read_file(filename)
-	str_out = json%to_str()
+	!str_out = json%to_str()
 	!print *, "str_out = ", str_out
 
 	val = json%get_val('/foo')
@@ -256,7 +254,7 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 2", nfail, ntot)
 
-	val = json%get_val('bar/FOO')
+	val = json%get_val('/bar/FOO')
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 3", nfail, ntot)
 
@@ -286,7 +284,7 @@ subroutine test_in8(nfail, ntot)
 	expect_str = "kicks"
 	TEST(val%sca%str == expect_str, "test_in8 9", nfail, ntot)
 
-	val = json%get_val('baz/foo//')
+	val = json%get_val('/baz/foo//')
 	expect_i64 = 42
 	TEST(val%sca%i64 == expect_i64, "test_in8 10", nfail, ntot)
 
@@ -309,7 +307,7 @@ end subroutine test_in8
 subroutine test_in9(nfail, ntot)
 	! Get keys by "json pointer" path string -- RFC 6901
 	!
-	! Nested objects, case-sensitive keys, empty string keys, space keys
+	! The example from the RFC
 	integer, intent(inout) :: nfail, ntot
 	!********
 	character(len=:), allocatable :: filename, str_out, expect_str
@@ -321,12 +319,65 @@ subroutine test_in9(nfail, ntot)
 	write(*,*) "Unit testing file "//quote(filename)//" ..."
 
 	call json%read_file(filename)
-	str_out = json%to_str()
-	!print *, "str_out = ", str_out
+	!print *, "str_out 1 = ", str_out
 
-	!val = json%get_val('/foo')
-	!expect_i64 = 1337
-	!TEST(val%sca%i64 == expect_i64, "test_in9 1", nfail, ntot)
+	! TODO: update in9.json after arrays are supported
+
+	! Empty str means whole document.  This means leading '/' is not optional
+	! for other cases
+	!
+	! Note, I can't figure out how to pass an empty string as a "-p" cmd
+	! argument. Quoting should work, but it's getting padded somewhere
+	! (fortran?)
+	val = json%get_val('')
+	json%compact = .true.
+	str_out = val_to_str(json, val)
+	expect_str = '{"comment":"\"foo\": [\"bar\", \"baz\"]","":0,"a/b":1,"c%d":2,"e^f":3,"g|h":4,"i\\j":5,"k\"l":6," ":7,"m~n":8}'
+	!print *, expect_str
+	!print *, str_out
+	TEST(str_out == expect_str, "test_in9 1", nfail, ntot)
+
+	! TODO: 'foo' tests after arrays
+	!
+	!    "/foo"       ["bar", "baz"]
+	!    "/foo/0"     "bar"
+
+	!    "/"          0
+	val = json%get_val('/')
+	expect_i64 = 0
+	TEST(val%sca%i64 == expect_i64, "test_in9 2", nfail, ntot)
+
+	!    "/a~1b"      1
+	val = json%get_val('/a~1b')
+	expect_i64 = 1
+	TEST(val%sca%i64 == expect_i64, "test_in9 3", nfail, ntot)
+
+	!    "/c%d"       2
+	val = json%get_val('/c%d')
+	expect_i64 = 2
+	TEST(val%sca%i64 == expect_i64, "test_in9 4", nfail, ntot)
+
+	!    "/e^f"       3
+	val = json%get_val('/e^f')
+	expect_i64 = 3
+	TEST(val%sca%i64 == expect_i64, "test_in9 5", nfail, ntot)
+
+	!    "/g|h"       4
+	val = json%get_val('/g|h')
+	expect_i64 = 4
+	TEST(val%sca%i64 == expect_i64, "test_in9 6", nfail, ntot)
+
+	!!    "/i\\j"      5
+	!! TODO
+	!val = json%get_val('/i\\j')
+	!expect_i64 = 5
+	!TEST(val%sca%i64 == expect_i64, "test_in9 7", nfail, ntot)
+
+	!    "/k\"l"      6
+
+	!    "/ "         7
+
+	!    "/m~0n"      8
 
 end subroutine test_in9
 

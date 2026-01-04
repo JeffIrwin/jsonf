@@ -39,7 +39,7 @@ function get_arg(i)
 	if (io /= 0) then
 		call panic("can't get length of command argument index "//to_str(i))
 	end if
-	!print *, "arg "//to_str(i)//" len_ = ", len_
+	print *, "arg "//to_str(i)//" len_ = ", len_
 
 	allocate(character(len = len_) :: get_arg)
 

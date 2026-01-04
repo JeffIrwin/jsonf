@@ -110,7 +110,7 @@ module jsonf
 		logical :: compact = .false.
 		logical :: hashed_order = .false.  ! if false, output in the same order as the input source
 
-		integer :: indent_level
+		integer :: indent_level = 0
 
 		contains
 			procedure :: &
@@ -495,7 +495,7 @@ function escape(str)
 	type(str_builder_t) :: sb
 	sb = new_str_builder()
 	do i = 1, len(str)
-		if (any(str(i:i) == ['"'])) call sb%push("\")
+		if (any(str(i:i) == ['"', '\'])) call sb%push("\")
 		call sb%push(str(i:i))
 	end do
 	escape = sb%trim()
@@ -672,11 +672,8 @@ function get_val_json(json, ptr) result(val)
 	character(len=*), intent(in) :: ptr  ! RFC 6901 path string
 	type(json_val_t) :: val
 	!********
-	integer :: i0
 
-	i0 = 0  ! optional leading "/"
-	if (ptr(1:1) == "/") i0 = 1
-	call get_val_core(json%root, ptr, i0, val)
+	call get_val_core(json%root, ptr, 1, val)
 
 end function get_val_json
 
@@ -688,9 +685,10 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	type(json_val_t) :: outval
 	!********
 	character(len=:), allocatable :: key
-	integer :: i
+	integer :: i, j
 	integer(kind=4) :: idx
 	logical :: found
+	type(str_builder_t) :: sb
 
 	if (i0 > len(ptr)) then
 		! Base case: whole path has been walked
@@ -705,14 +703,43 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 
 	i = i0 + 1
 	do
-		! TODO: handle RFC escape rules
 		if (i > len(ptr)) exit
 		if (ptr(i:i) == "/") exit
 		i = i + 1
 	end do
 
-	key = ptr(i0+1: i-1)
-	!print *, "key = ", key
+	! TODO: test this RFC paragraph:
+	!
+	!   Evaluation of each reference token begins by decoding any escaped
+	!   character sequence.  This is performed by first transforming any
+	!   occurrence of the sequence '~1' to '/', and then transforming any
+	!   occurrence of the sequence '~0' to '~'.  By performing the
+	!   substitutions in this order, an implementation avoids the error of
+	!   turning '~01' first into '~1' and then into '/', which would be
+	!   incorrect (the string '~01' correctly becomes '~1' after
+	!   transformation).
+
+	! TODO: don't need a str builder, just allocate to ptr substr's len then trim
+	sb = new_str_builder()
+	j = i0
+	!do j = i0+1, i-1
+	do while (j < i-1)
+		j = j + 1
+		if (ptr(j:j+1) == "~0") then
+			call sb%push('~')
+			j = j + 1
+			cycle
+		else if (ptr(j:j+1) == "~1") then
+			call sb%push('/')
+			j = j + 1
+			cycle
+		end if
+		call sb%push(ptr(j:j))
+	end do
+	key = sb%trim()
+
+	!key = ptr(i0+1: i-1)
+	print *, "key = ", key
 
 	select case (val%type)
 	case (ARR_TYPE)

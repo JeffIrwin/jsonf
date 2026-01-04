@@ -42,6 +42,7 @@ subroutine app_echo_file(args)
 		! TODO: probably don't want to always print json above, may be useful for now
 		! for debugging
 		print *, "pointer = "//quote(args%pointer)
+		print *, "len(pointer) = ", len(args%pointer)
 
 		val = json%get_val(args%pointer)
 		!call copy_val(val, json%get_val(args%pointer))
