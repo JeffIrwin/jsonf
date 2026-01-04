@@ -214,7 +214,8 @@ subroutine test_in7(nfail, ntot)
 	expect_i32 = 1337
 	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
 
-	! Leading path separator is optional
+	! Leading path separator is optional, unless the first object has an
+	! empty-string key
 	val = json%get_val('/foo')
 	expect_i32 = 1337
 	TEST(val%sca%i64 == expect_i32, "test_in7 1", nfail, ntot)
@@ -255,7 +256,6 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 2", nfail, ntot)
 
-	! Leading path separator is optional
 	val = json%get_val('bar/FOO')
 	expect_i64 = 90210
 	TEST(val%sca%i64 == expect_i64, "test_in8 3", nfail, ntot)
@@ -281,12 +281,28 @@ subroutine test_in8(nfail, ntot)
 	expect_i64 = 420
 	TEST(val%sca%i64 == expect_i64, "test_in8 8", nfail, ntot)
 
-	! Empty space key after last "/"
+	! Empty space key(s) after last "/"
 	val = json%get_val('/baz/bar/')
 	expect_str = "kicks"
 	TEST(val%sca%str == expect_str, "test_in8 9", nfail, ntot)
 
-	! TODO: add tests for empty keys in middle and start of path
+	val = json%get_val('baz/foo//')
+	expect_i64 = 42
+	TEST(val%sca%i64 == expect_i64, "test_in8 10", nfail, ntot)
+
+	! Empty keys in middle or start of path
+
+	! This one is tricky in jq.  You have to quote the empty strings:
+	!
+	!     jq '.""."".a.b' data/in8.json
+	!
+	val = json%get_val('///a/b')
+	expect_i64 = 80085
+	TEST(val%sca%i64 == expect_i64, "test_in8 11", nfail, ntot)
+
+	val = json%get_val('///a////c')
+	expect_i64 = 5055034455_8
+	TEST(val%sca%i64 == expect_i64, "test_in8 12", nfail, ntot)
 
 end subroutine test_in8
 
