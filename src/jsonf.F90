@@ -728,7 +728,6 @@ recursive function arr_to_str(json, arr) result(str)
 
 	do i = 1, arr%narr
 		if (.not. json%compact) call sb%push(indent)
-		if (.not. json%compact) call sb%push(" ")
 		call sb%push(val_to_str(json, arr%arr(i)))
 		if (i < arr%narr) call sb%push(",")
 		if (.not. json%compact) call sb%push(LINE_FEED)
