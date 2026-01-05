@@ -553,7 +553,7 @@ subroutine test_float_jsons(nfail, ntot)
 
 	! TODO: test floats in nested objects/arrays
 
-	! TODO: not strict JSON
+	! Note, not strict JSON, disabled with -Werror=numbers
 	call json%read_str('3.')
 	val = json%get_val('')
 	!print *, "val = ", val_to_str(json, val)
@@ -717,8 +717,7 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = '0'
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.2", nfail, ntot)
 
-	! This is not strictly standard JSON either. Can only have leading zero if
-	! it's before a decimal
+	! Note, not strict JSON, disabled with -Werror=numbers
 	str = '01'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -731,6 +730,7 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.4", nfail, ntot)
 
+	! Note, not strict JSON, disabled with -Werror=numbers
 	str = '+2'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -743,7 +743,7 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.6", nfail, ntot)
 
-	! TODO: not strict JSON, plus is only allowed in exponent
+	! Note, not strict JSON, disabled with -Werror=numbers
 	str = '+253'
 	call json%read_str(str)
 	str_out = json%to_str()

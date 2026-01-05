@@ -987,10 +987,9 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	type(json_val_t) :: outval
 	!********
 	character(len=:), allocatable :: key
-	integer :: i, j
+	integer :: i, j, k
 	integer(kind=4) :: idx
 	logical :: found
-	type(str_builder_t) :: sb
 
 	if (i0 > len(ptr)) then
 		! Base case: whole path has been walked
@@ -1022,34 +1021,33 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	!   incorrect (the string '~01' correctly becomes '~1' after
 	!   transformation).
 
-	! TODO: don't need a str builder, just allocate to ptr substr's len then trim
-	sb = new_str_builder()
+	key = ptr(i0+1: i-1)  ! over-allocate
 	j = i0
-	!do j = i0+1, i-1
+	k = 1
 	do while (j < i-1)
 		j = j + 1
 		if (j+1 < len(ptr)) then
 			if (ptr(j:j+1) == "~0") then
-				call sb%push('~')
+				key(k:k) = '~'
+				k = k + 1
 				j = j + 1
 				cycle
 			else if (ptr(j:j+1) == "~1") then
-				call sb%push('/')
+				key(k:k) = '/'
+				k = k + 1
 				j = j + 1
 				cycle
 			end if
 		end if
-		call sb%push(ptr(j:j))
+		!call sb%push(ptr(j:j))
+		key(k:k) = ptr(j:j)
+		k = k + 1
 	end do
-
-	key = sb%trim()
+	key = key(1:k-1)
 	!key = escape(sb%trim())
-	!!key = ptr(i0+1: i-1)
-
 	!print *, "key = ", key
 
 	select case (val%type)
-
 	case (OBJ_TYPE)
 		idx = get_map_idx(val, key, found)
 		if (.not. found) then
@@ -1060,7 +1058,9 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	case (ARR_TYPE)
 		idx = read_i32(key) ! TODO: iostat
 		!print *, "idx = ", idx
-		! TODO: check bounds
+		if (idx < 0 .or. idx >= val%narr) then
+			call panic("index "//to_str(idx)//" out of bounds")
+		end if
 		call get_val_core(val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
 
 	case default
