@@ -465,7 +465,7 @@ logical function is_valid_json_number(str) result(is_valid)
 	!     frac  = "." 1*digit
 	!     exp   = ("e" | "E") [ "+" | "-" ] 1*digit
 	!
-	! Verify grammar with this process:
+	! Validate grammar with this process:
 	!
 	! - Strip optional leading -
 	! - If integer part starts with 0, it must be exactly "0"
@@ -478,7 +478,7 @@ logical function is_valid_json_number(str) result(is_valid)
 	int_start = 1
 	if (str(1:1) == "-") int_start = 2
 
-	int_end = verify(str(int_start:), DIGIT_CHARS) + int_start - 2
+	int_end = verify(str(int_start+1:), DIGIT_CHARS) + int_start - 1
 	if (int_end < int_start) int_end = len(str)
 	!print *, "int_start, int_end = ", int_start, int_end
 	!print *, "int part = ", quote(str(int_start: int_end))
@@ -498,8 +498,8 @@ logical function is_valid_json_number(str) result(is_valid)
 	frac_start = int_end + 1
 
 	! Get the exp_start now because it's the easiest way to get frac_end
-	exp_start = scan(str, "eE")  ! TODO: scan substr and add if found
-	if (exp_start <= 0) exp_start = len(str)+1
+	exp_start = scan(str(frac_start:), "eE") + frac_start - 1
+	if (exp_start < frac_start) exp_start = len(str)+1
 
 	frac_end = exp_start - 1
 	has_frac = frac_start <= frac_end
