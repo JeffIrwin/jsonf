@@ -7,17 +7,19 @@ module jsonf
 	! TODO:
 	! - float improvements:
 	!   * auto convert i64 overflows to f64?
-	!   * add option to not allow d/D exponents a la Fortran. default?
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
 	!   other options, e.g. error_trailing_commas, require leading digit before
 	!   decimal point, etc.
+	!   * name strict, pedantic, -Wall or -Werror
 	!   * probably keep error_duplicate_keys orthogonal to this since standard
 	!     allows dupes
 	! - error handling
 	!   * don't panic unless stop-on-error is requested
 	! - get_val() improvements:
 	!   * need a related `json%len(pointer)` method, or like json-fortran's
-	!     %info(), to get len (n_children) of array (or object)
+	!     %info(), to get len (n_children) of array (or object). maybe refactor
+	!     get_val to take multiple opt out args or a struct to copy in the
+	!     appropriate requested data
 	!   * optional 'found' out-arg
 	!   * name get_val() or just get() ?
 	!   * add typed versions: get_i64(), get_bool(), etc.
@@ -134,6 +136,8 @@ module jsonf
 			error_duplicate_keys  = .false., &
 			error_trailing_commas = .false., &
 			warn_trailing_commas  = .false., &
+			error_numbers         = .false., &
+			warn_numbers          = .false., &
 			first_duplicate       = .false.
 
 		! String, print, and write output formatting options
@@ -176,6 +180,10 @@ module jsonf
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
 		character     :: current_char , previous_char
 		type(token_t) :: current_token, previous_token
+
+		logical :: &
+			error_numbers         = .false., &
+			warn_numbers          = .false.
 
 		contains
 			procedure :: &
@@ -333,8 +341,18 @@ function lex(lexer) result(token)
 		text_strip = rm_char(text, "_")
 		!print *, "text = ", text
 
-		!! TODO
-		!is_valid = is_valid_json_number(text_strip)
+		!print *, "lexer%error_numbers = ", lexer%error_numbers
+		if (lexer%warn_numbers .or. lexer%error_numbers) then
+			is_valid = is_valid_json_number(text_strip)
+			!print *, "is_valid = ", is_valid
+			if (.not. is_valid) then
+				if (lexer%warn_numbers) then
+					write(*, "(a)") WARN_STR//"invalid number "//quote(text)
+				else if (lexer%error_numbers) then
+					call panic("invalid number "//quote(text))
+				end if
+			end if
+		end if
 
 		if (float_) then
 			read(text_strip, *, iostat = io) f64
@@ -583,10 +601,17 @@ function new_token(kind, pos, text, sca) result(token)
 
 end function new_token
 
-function new_lexer(stream) result(lexer)
+function new_lexer(stream, json) result(lexer)
 	type(stream_t) :: stream
 	type(lexer_t) :: lexer
+	type(json_t), optional :: json
 	!********
+
+	if (present(json)) then
+		lexer%warn_numbers  = json%warn_numbers
+		lexer%error_numbers = json%error_numbers
+	end if
+
 	lexer%pos = 1
 	lexer%diagnostics = new_str_vec()
 	lexer%stream = stream
@@ -663,7 +688,7 @@ subroutine parse_json(json, stream)
 	!********
 	type(lexer_t) :: lexer
 
-	lexer = new_lexer(stream)
+	lexer = new_lexer(stream, json)
 	!write(*,*) "Parsing JSON tokens ..."
 	call parse_val(json, lexer, json%root)
 

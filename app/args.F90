@@ -16,6 +16,8 @@ module jsonf__args
 			warn_no_commas  = .false., &
 			warn_commas     = .false., &
 			error_commas    = .false., &
+			warn_numbers    = .false., &
+			error_numbers   = .false., &
 			quiet           = .false., &
 			tokens          = .false., &
 			has_pointer     = .false., &
@@ -99,6 +101,11 @@ function parse_args() result(args)
 			args%warn_commas = .true.
 		case ("-Werror=commas")
 			args%error_commas = .true.
+
+		case ("-Wnumbers")
+			args%warn_numbers = .true.
+		case ("-Werror=numbers")
+			args%error_numbers = .true.
 
 		! TODO: add dup warning option. Maybe rename these flag(s) in gcc style?
 		case ("-d", "--no-dup", "--no-duplicate-keys")

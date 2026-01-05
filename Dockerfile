@@ -60,7 +60,17 @@ RUN ./bin/jsonf -s '"terminated string\" still"' -l
 RUN ! ./bin/jsonf -s '{"a: 1}' -l
 RUN ! ./bin/jsonf -s '{"a": 1' -l
 
-# TODO: test unterminated array
+# Unterminated array
+RUN ! ./bin/jsonf -s '[' -l
+RUN ! ./bin/jsonf -s '{"": [}' -l
+RUN ./bin/jsonf -s '[]' -l
+RUN ./bin/jsonf -s '{"": []}' -l
+
+# Invalid numbers
+RUN ! ./bin/jsonf -s '0.' -l -Werror=numbers
+RUN ! ./bin/jsonf -s '.0' -l -Werror=numbers
+RUN ./bin/jsonf -s '0.0' -l -Werror=numbers
+RUN ./bin/jsonf -s '0.' -l -Wnumbers
 
 # Do one more because I want green text at the end of the log
 RUN ./bin/jsonf -s '{"a": 1, "b": 2}'
