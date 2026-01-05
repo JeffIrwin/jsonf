@@ -553,6 +553,7 @@ subroutine test_float_jsons(nfail, ntot)
 
 	! TODO: test floats in nested objects/arrays
 
+	! TODO: not strict JSON
 	call json%read_str('3.')
 	val = json%get_val('')
 	!print *, "val = ", val_to_str(json, val)
@@ -716,6 +717,8 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = '0'
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.2", nfail, ntot)
 
+	! This is not strictly standard JSON either. Can only have leading zero if
+	! it's before a decimal
 	str = '01'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -740,6 +743,7 @@ subroutine test_basic_jsons(nfail, ntot)
 	expect = str
 	TEST(is_str_eq(str_out, expect), "test_basic_jsons 3.6", nfail, ntot)
 
+	! TODO: not strict JSON, plus is only allowed in exponent
 	str = '+253'
 	call json%read_str(str)
 	str_out = json%to_str()
@@ -907,6 +911,158 @@ subroutine test_basic_jsons(nfail, ntot)
 
 end subroutine test_basic_jsons
 
+subroutine test_num_jsons(nfail, ntot)
+	! Test the JSON number validator
+	integer, intent(inout) :: nfail, ntot
+	!********
+	integer :: i
+	logical :: is_valid
+	type(str_vec_t) :: str_vec
+
+	is_valid = is_valid_json_number("123.456")
+
+	!********
+	! Valid numbers
+	str_vec = new_str_vec()
+
+	! ints
+	call str_vec%push("0")
+	call str_vec%push("-0")
+	call str_vec%push("1")
+	call str_vec%push("9")
+	call str_vec%push("10")
+	call str_vec%push("99")
+	call str_vec%push("100")
+	call str_vec%push("1234567890")
+	call str_vec%push("-1")
+	call str_vec%push("-9")
+	call str_vec%push("-10")
+	call str_vec%push("-1234567890")
+
+	! fracs
+	call str_vec%push("0.0")
+	call str_vec%push("-0.0")
+	call str_vec%push("0.1")
+	call str_vec%push("1.0")
+	call str_vec%push("1.5")
+	call str_vec%push("10.01")
+	call str_vec%push("123.456")
+	call str_vec%push("-0.1")
+	call str_vec%push("-1.0")
+	call str_vec%push("-123.456")
+
+	! exponents
+	call str_vec%push("0e0")
+	call str_vec%push("0E0")
+	call str_vec%push("1e0")
+	call str_vec%push("1E0")
+	call str_vec%push("1e1")
+	call str_vec%push("1e+1")
+	call str_vec%push("1e-1")
+	call str_vec%push("-1e1")
+	call str_vec%push("-1e+1")
+	call str_vec%push("-1e-1")
+	call str_vec%push("123e456")
+	call str_vec%push("123E456")
+	call str_vec%push("0.1e1")
+	call str_vec%push("1.23e-10")
+	call str_vec%push("-1.23E+10")
+	call str_vec%push("0.0e0")
+	call str_vec%push("-0.0e0")
+	call str_vec%push("1.0e10")
+	call str_vec%push("-1.0e-10")
+	call str_vec%push("123.456E789")
+
+	do i = 1, str_vec%len
+		is_valid = is_valid_json_number(str_vec%vec(i)%str)
+		TEST(is_valid .eqv. .true., "test_num_jsons 1, i="//to_str(i), nfail, ntot)
+	end do
+
+	!********
+	! Invalid numbers
+	str_vec = new_str_vec()
+
+	! leading zeros
+	call str_vec%push("00")
+	call str_vec%push("01")
+	call str_vec%push("09")
+	call str_vec%push("000")
+	call str_vec%push("0123")
+	call str_vec%push("-00")
+	call str_vec%push("-01")
+	call str_vec%push("-09")
+	call str_vec%push("-0123")
+
+	! invalid frac TODO
+	call str_vec%push("1.")
+	call str_vec%push("0.")
+	call str_vec%push("-1.")
+	call str_vec%push(".1")
+	call str_vec%push("-.1")
+	call str_vec%push("1..0")
+	call str_vec%push("1.0.0")
+
+	! invalid exponents
+	call str_vec%push("1e")
+	call str_vec%push("1E")
+	call str_vec%push("1e+")
+	call str_vec%push("1e-")
+	call str_vec%push("1e+-1")
+	call str_vec%push("1e--1")
+	call str_vec%push("1ee1")
+	call str_vec%push("1E+E1")
+
+	! leading zero
+	call str_vec%push("01.0")
+	call str_vec%push("01e1")
+	call str_vec%push("01.0e1")
+	call str_vec%push("-01.0")
+	call str_vec%push("-01e1")
+
+	! missing integer part
+	call str_vec%push(".e1")
+	call str_vec%push(".E1")
+	call str_vec%push(".e+1")
+	call str_vec%push(".e-1")
+
+	! invalid chars
+	call str_vec%push("+")
+	call str_vec%push("-")
+	call str_vec%push("--1")
+	call str_vec%push("+-1")
+	call str_vec%push("1-")
+	call str_vec%push("1+")
+	call str_vec%push("1a")
+	call str_vec%push("a1")
+	call str_vec%push("1_0")
+	call str_vec%push("1,000")
+
+	! whitespace
+	call str_vec%push(" 1")
+	call str_vec%push("1 ")
+	call str_vec%push(" 1 ")
+	call str_vec%push("\n1")
+	call str_vec%push("1\n")
+	call str_vec%push("0x10")
+	call str_vec%push("0X10")
+	call str_vec%push("0b10")
+	call str_vec%push("0o10")
+	call str_vec%push("NaN")
+	call str_vec%push("Infinity")
+	call str_vec%push("-Infinity")
+	call str_vec%push("inf")
+	call str_vec%push("")
+	call str_vec%push(".")
+	call str_vec%push("e10")
+	call str_vec%push("-E1")
+
+	do i = 1, str_vec%len
+		is_valid = is_valid_json_number(str_vec%vec(i)%str)
+		TEST(is_valid .eqv. .false., "test_num_jsons 2, i="//to_str(i), nfail, ntot)
+	end do
+
+end subroutine test_num_jsons
+
 end module jsonf__test
 
 program test
@@ -923,6 +1079,7 @@ program test
 	call seed_rng_zeros()
 
 	call test_sort(nfail, ntot)
+	call test_num_jsons(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
 	call test_float_jsons(nfail, ntot)
 	call test_in1(nfail, ntot)

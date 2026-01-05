@@ -16,6 +16,8 @@ module jsonf
 	! - error handling
 	!   * don't panic unless stop-on-error is requested
 	! - get_val() improvements:
+	!   * need a related `json%len(pointer)` method, or like json-fortran's
+	!     %info(), to get len (n_children) of array (or object)
 	!   * optional 'found' out-arg
 	!   * name get_val() or just get() ?
 	!   * add typed versions: get_i64(), get_bool(), etc.
@@ -45,6 +47,7 @@ module jsonf
 	!   * cmake
 	! - lint performance -- can we parse without saving anything?  don't store
 	!   anything in arrays or hashmaps etc.
+	! - benchmark performance
 	! - unit tests must cover bad syntax -- it's important that they don't go
 	!   into an infinite loop on anything like unterminated strs (i just did
 	!   this :facepalm:)
@@ -124,20 +127,27 @@ module jsonf
 	character(len=*), parameter :: INDENT_DEFAULT = "    "
 	type json_t
 		! JSON top-level type
-		type(json_val_t) :: root
 
+		!********
+		! Public members
+
+		! Syntax strictness/permissiveness options
 		logical :: &
 			error_duplicate_keys  = .false., &
 			error_trailing_commas = .false., &
 			warn_trailing_commas  = .false., &
 			first_duplicate       = .false.
 
-		! String and print output formatting options
+		! String, print, and write output formatting options
 		character(len=:), allocatable :: indent
 		logical :: compact = .false.
 		logical :: hashed_order = .false.  ! if false, output in the same order as the input source
 
-		integer :: indent_level = 0
+		!********
+		! Private members
+		type(json_val_t), private :: root
+		integer, private :: indent_level = 0
+		!********
 
 		contains
 			procedure :: &
@@ -263,7 +273,7 @@ function lex(lexer) result(token)
 	character(len=:), allocatable :: text, text_strip
 	integer :: io
 	integer(kind=8) :: start, end_, i64
-	logical :: float_
+	logical :: float_, is_valid
 	real(kind=8) :: f64
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
@@ -322,6 +332,9 @@ function lex(lexer) result(token)
 		text = sb%trim()
 		text_strip = rm_char(text, "_")
 		!print *, "text = ", text
+
+		!! TODO
+		!is_valid = is_valid_json_number(text_strip)
 
 		if (float_) then
 			read(text_strip, *, iostat = io) f64
@@ -436,6 +449,136 @@ function lex(lexer) result(token)
 	call lexer%next_char()
 
 end function lex
+
+logical function is_valid_json_number(str) result(is_valid)
+	! Check the correct formatting of a `str` representing a potential JSON
+	! number
+	character(len=*), intent(in) :: str
+	!********
+	integer :: int_start, int_end, frac_start, frac_end, exp_start, exp_end
+	logical :: has_frac, has_exp
+
+	! JSON number grammar:
+	!
+	!     number = [ "-" ] int [ frac ] [ exp ]
+	!     int   = "0" | digit1-9 *digit
+	!     frac  = "." 1*digit
+	!     exp   = ("e" | "E") [ "+" | "-" ] 1*digit
+	!
+	! Verify grammar with this process:
+	!
+	! - Strip optional leading -
+	! - If integer part starts with 0, it must be exactly "0"
+	! - If fractional part exists, require at least one digit
+	! - If exponent exists, require digits after e/E
+
+	print *, ""
+	print *, "str = ", quote(str)
+
+	is_valid = .true.
+
+	!int_start = scan(str, DIGIT_CHARS)
+	int_start = 1
+	if (str(1:1) == "-") int_start = 2
+
+	!int_end   = scan(str, ".eE") - 1  ! TODO: use verify starting from int_start+1 instead
+	!if (int_end <= 0) int_end = len(str)
+	!int_end = verify(str, DIGIT_CHARS) - 1
+	if (int_start == len(str)) then
+		int_end = int_start
+	else
+		!int_end = verify(str(int_start:), DIGIT_CHARS) + int_start - 2
+		int_end = verify(str(int_start:), DIGIT_CHARS) !+ int_start - 2
+		if (int_end <= 0) then
+			int_end = len(str)
+		else
+			int_end = int_end + int_start - 2
+		end if
+	end if
+	!if (int_end > 0) int_end = int_end + int_start
+	!if (int_end <= 0)
+
+	print *, "int_start, int_end = ", int_start, int_end
+
+	!is_valid = int_end >= 0
+	is_valid = int_start <= int_end
+	if (.not. is_valid) return
+
+	print *, "int part = ", quote(str(int_start: int_end))
+
+	! - If integer part starts with 0, it must be exactly "0"
+	if (str(int_start:int_start) == "0") then
+		is_valid = int_start == int_end
+		print *, "is_valid 1 = ", is_valid
+		if (.not. is_valid) return
+	end if
+
+	! TODO: confirm int part is all digits? Similar for frac (after '.') and exp
+	! (after 'e' and/or '+-')
+	is_valid = is_all_digits(str(int_start:int_end))
+	print *, "is_valid 2 = ", is_valid
+	if (.not. is_valid) return
+
+	exp_start = scan(str, "eE")
+	if (exp_start <= 0) exp_start = len(str)+1
+
+	frac_start = int_end + 1
+	frac_end = exp_start - 1
+	!has_frac = frac_start <= len(str)
+	has_frac = frac_start <= frac_end
+	if (has_frac) then
+
+		is_valid = frac_start-1 < int_end+1 .or. any(str(int_end+1: frac_start-1) == [".", "e", "E"])
+		print *, "substr = ", str(int_end+1: frac_start-1)
+		print *, "is_valid 3 = ", is_valid
+		if (.not. is_valid) return
+
+		frac_end = scan(str, "eE") - 1  ! TODO: use verify instead
+		if (frac_end <= 0) frac_end = len(str)
+
+		if (str(frac_start:frac_start) == ".") frac_start = frac_start+1
+
+		print *, "frac part = ", quote(str(frac_start: frac_end))
+		!print *, "frac_end = ", str(frac_end:frac_end)
+
+		! - If fractional part exists, require at least one digit
+		is_valid = contains(str(frac_end:frac_end), DIGIT_CHARS)
+		!is_valid = contains(DIGIT_CHARS, str(frac_end:frac_end))  ! same
+		print *, "is_valid 4 = ", is_valid
+		if (.not. is_valid) return
+
+		is_valid = is_all_digits(str(frac_start:frac_end))
+		print *, "is_valid 5 = ", is_valid
+		if (.not. is_valid) return
+	end if
+
+	!exp_start = frac_end + 1
+	has_exp = exp_start <= len(str)
+	if (has_exp) then
+		exp_end = len(str)
+
+		! - If exponent exists, require digits after e/E
+		is_valid = contains(str(exp_end:exp_end), DIGIT_CHARS)
+		print *, "is_valid 6 = ", is_valid
+		if (.not. is_valid) return
+
+		! Skip [eE]
+		exp_start = exp_start + 1
+
+		! Skip [+-] if present
+		if (contains("+-", str(exp_start:exp_start))) exp_start = exp_start + 1
+
+		! Now we have just the digit part of the exponent, if it's formatted
+		! correctly
+		is_valid = is_all_digits(str(exp_start:exp_end))
+		print *, "is_valid 7 = ", is_valid
+		if (.not. is_valid) return
+
+	end if
+
+	print *, ""
+
+end function is_valid_json_number
 
 function new_keyword_token(pos, text) result(token)
 	integer(kind=8), intent(in) :: pos

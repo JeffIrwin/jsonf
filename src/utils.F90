@@ -18,6 +18,8 @@ module jsonf__utils
 			CARRIAGE_RETURN = char(13), &
 			ESC             = char(27)
 
+	character(len=*), parameter :: DIGIT_CHARS = "0123456789"
+
 	! TODO: make these variables, with colors disabled if output_unit is not tty
 	! and an option to --force-color
 	character(len = *), parameter :: &
@@ -901,6 +903,18 @@ function quote(str)
 	character(len=:), allocatable :: quote
 	quote = '"'//str//'"'
 end function quote
+
+!===============================================================================
+
+logical function contains(haystack, needle)
+	character(len=*), intent(in) :: haystack, needle
+	contains = scan(haystack, needle) > 0
+end function contains
+
+logical function is_all_digits(str)
+	character(len=*), intent(in) :: str
+	is_all_digits = verify(str, DIGIT_CHARS) <= 0
+end function is_all_digits
 
 !===============================================================================
 
