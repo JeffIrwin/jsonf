@@ -19,6 +19,8 @@ subroutine args_to_json_config(args, json)
 	json%warn_trailing_commas  = args%warn_commas
 	json%error_trailing_commas = args%error_commas
 
+	json%lint = args%lint
+
 	if (args%lint) then
 		json%warn_trailing_commas  = .not. args%warn_no_commas
 	end if

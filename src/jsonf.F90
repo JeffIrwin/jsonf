@@ -45,8 +45,6 @@ module jsonf
 	!   * test on windows, linux (macos?)
 	!   * test with different fortran compilers
 	!   * cmake
-	! - lint performance -- can we parse without saving anything?  don't store
-	!   anything in arrays or hashmaps etc.
 	! - benchmark performance
 	! - unit tests must cover bad syntax -- it's important that they don't go
 	!   into an infinite loop on anything like unterminated strs (i just did
@@ -142,6 +140,8 @@ module jsonf
 		character(len=:), allocatable :: indent
 		logical :: compact = .false.
 		logical :: hashed_order = .false.  ! if false, output in the same order as the input source
+
+		logical :: lint = .false.
 
 		!********
 		! Private members
@@ -1074,21 +1074,23 @@ subroutine parse_arr(json, lexer, arr)
 		call parse_val(json, lexer, val)
 		!print *, "val = ", val%to_str()
 
-		n0 = size(arr%arr)
-		if (idx > n0) then
-			! Resize array dynamically
-			n = n0 * 2
-			call move_alloc(arr%arr, old_arr)
-			allocate(arr%arr(n))
-			do i = 1, n0
-				call move_val(old_arr(i), arr%arr(i))
-			end do
-			deallocate(old_arr)
-		end if
+		if (.not. json%lint) then
+			n0 = size(arr%arr)
+			if (idx > n0) then
+				! Resize array dynamically
+				n = n0 * 2
+				call move_alloc(arr%arr, old_arr)
+				allocate(arr%arr(n))
+				do i = 1, n0
+					call move_val(old_arr(i), arr%arr(i))
+				end do
+				deallocate(old_arr)
+			end if
 
-		! Store the value. Could avoid temp `val` by resizing before parsing,
-		! arrays are simpler than objects
-		call move_val(val, arr%arr(idx))
+			! Store the value. Could avoid temp `val` by resizing before parsing,
+			! arrays are simpler than objects
+			call move_val(val, arr%arr(idx))
+		end if
 
 		if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
@@ -1144,8 +1146,10 @@ subroutine parse_obj(json, lexer, obj)
 		call parse_val(json, lexer, val)
 		!print *, "val = ", val%to_str()
 
-		! Store the key-value pair in the object
-		call set_map(json, obj, key, val)
+		if (.not. json%lint) then
+			! Store the key-value pair in the object
+			call set_map(json, obj, key, val)
+		end if
 
 		if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
