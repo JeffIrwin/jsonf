@@ -993,7 +993,7 @@ subroutine test_num_jsons(nfail, ntot)
 	call str_vec%push("-09")
 	call str_vec%push("-0123")
 
-	! invalid frac TODO
+	! invalid frac
 	call str_vec%push("1.")
 	call str_vec%push("0.")
 	call str_vec%push("-1.")
@@ -1041,16 +1041,22 @@ subroutine test_num_jsons(nfail, ntot)
 	call str_vec%push(" 1")
 	call str_vec%push("1 ")
 	call str_vec%push(" 1 ")
-	call str_vec%push("\n1")
-	call str_vec%push("1\n")
+	call str_vec%push(LINE_FEED//"1")
+	call str_vec%push("1"//LINE_FEED)
+
+	! Non-decimals
 	call str_vec%push("0x10")
 	call str_vec%push("0X10")
 	call str_vec%push("0b10")
 	call str_vec%push("0o10")
+
+	! Special values
 	call str_vec%push("NaN")
 	call str_vec%push("Infinity")
 	call str_vec%push("-Infinity")
 	call str_vec%push("inf")
+
+	! Empty or partial
 	call str_vec%push("")
 	call str_vec%push(".")
 	call str_vec%push("e10")

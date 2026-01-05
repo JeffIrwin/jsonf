@@ -472,94 +472,58 @@ logical function is_valid_json_number(str) result(is_valid)
 	! - If fractional part exists, require at least one digit
 	! - If exponent exists, require digits after e/E
 
-	print *, ""
-	print *, "str = ", quote(str)
-
+	!print *, "str = ", quote(str)
 	is_valid = .true.
 
-	!int_start = scan(str, DIGIT_CHARS)
 	int_start = 1
 	if (str(1:1) == "-") int_start = 2
 
-	!int_end   = scan(str, ".eE") - 1  ! TODO: use verify starting from int_start+1 instead
-	!if (int_end <= 0) int_end = len(str)
-	!int_end = verify(str, DIGIT_CHARS) - 1
-	if (int_start == len(str)) then
-		int_end = int_start
-	else
-		!int_end = verify(str(int_start:), DIGIT_CHARS) + int_start - 2
-		int_end = verify(str(int_start:), DIGIT_CHARS) !+ int_start - 2
-		if (int_end <= 0) then
-			int_end = len(str)
-		else
-			int_end = int_end + int_start - 2
-		end if
-	end if
-	!if (int_end > 0) int_end = int_end + int_start
-	!if (int_end <= 0)
+	int_end = verify(str(int_start:), DIGIT_CHARS) + int_start - 2
+	if (int_end < int_start) int_end = len(str)
+	!print *, "int_start, int_end = ", int_start, int_end
+	!print *, "int part = ", quote(str(int_start: int_end))
 
-	print *, "int_start, int_end = ", int_start, int_end
-
-	!is_valid = int_end >= 0
 	is_valid = int_start <= int_end
 	if (.not. is_valid) return
-
-	print *, "int part = ", quote(str(int_start: int_end))
 
 	! - If integer part starts with 0, it must be exactly "0"
 	if (str(int_start:int_start) == "0") then
 		is_valid = int_start == int_end
-		print *, "is_valid 1 = ", is_valid
 		if (.not. is_valid) return
 	end if
 
-	! TODO: confirm int part is all digits? Similar for frac (after '.') and exp
-	! (after 'e' and/or '+-')
 	is_valid = is_all_digits(str(int_start:int_end))
-	print *, "is_valid 2 = ", is_valid
 	if (.not. is_valid) return
 
-	exp_start = scan(str, "eE")
+	frac_start = int_end + 1
+
+	! Get the exp_start now because it's the easiest way to get frac_end
+	exp_start = scan(str, "eE")  ! TODO: scan substr and add if found
 	if (exp_start <= 0) exp_start = len(str)+1
 
-	frac_start = int_end + 1
 	frac_end = exp_start - 1
-	!has_frac = frac_start <= len(str)
 	has_frac = frac_start <= frac_end
 	if (has_frac) then
 
 		is_valid = frac_start-1 < int_end+1 .or. any(str(int_end+1: frac_start-1) == [".", "e", "E"])
-		print *, "substr = ", str(int_end+1: frac_start-1)
-		print *, "is_valid 3 = ", is_valid
 		if (.not. is_valid) return
-
-		frac_end = scan(str, "eE") - 1  ! TODO: use verify instead
-		if (frac_end <= 0) frac_end = len(str)
 
 		if (str(frac_start:frac_start) == ".") frac_start = frac_start+1
 
-		print *, "frac part = ", quote(str(frac_start: frac_end))
-		!print *, "frac_end = ", str(frac_end:frac_end)
-
 		! - If fractional part exists, require at least one digit
 		is_valid = contains(str(frac_end:frac_end), DIGIT_CHARS)
-		!is_valid = contains(DIGIT_CHARS, str(frac_end:frac_end))  ! same
-		print *, "is_valid 4 = ", is_valid
 		if (.not. is_valid) return
 
 		is_valid = is_all_digits(str(frac_start:frac_end))
-		print *, "is_valid 5 = ", is_valid
 		if (.not. is_valid) return
 	end if
 
-	!exp_start = frac_end + 1
 	has_exp = exp_start <= len(str)
 	if (has_exp) then
 		exp_end = len(str)
 
 		! - If exponent exists, require digits after e/E
 		is_valid = contains(str(exp_end:exp_end), DIGIT_CHARS)
-		print *, "is_valid 6 = ", is_valid
 		if (.not. is_valid) return
 
 		! Skip [eE]
@@ -571,12 +535,9 @@ logical function is_valid_json_number(str) result(is_valid)
 		! Now we have just the digit part of the exponent, if it's formatted
 		! correctly
 		is_valid = is_all_digits(str(exp_start:exp_end))
-		print *, "is_valid 7 = ", is_valid
 		if (.not. is_valid) return
 
 	end if
-
-	print *, ""
 
 end function is_valid_json_number
 
