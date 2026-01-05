@@ -319,8 +319,7 @@ function lex(lexer) result(token)
 	if (is_float_under(lexer%current_char)) then
 		! Numeric decimal integer or float
 
-		! Don't worry about manually checking valid float formats. Just let the
-		! read() fail later
+		! Check valid number format later
 		!
 		! You'll never have to parse arithmetic like `1+2` in json, unlike
 		! syntran
@@ -1026,7 +1025,7 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	k = 1
 	do while (j < i-1)
 		j = j + 1
-		if (j+1 < len(ptr)) then
+		if (j+1 <= len(ptr)) then
 			if (ptr(j:j+1) == "~0") then
 				key(k:k) = '~'
 				k = k + 1
