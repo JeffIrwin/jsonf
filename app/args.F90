@@ -168,11 +168,11 @@ function parse_args() result(args)
 		.and. .not. (args%help .or. args%version)) then
 
 		error =.true.
-		write(*,*) ERROR_STR//"no input JSON filename or string given"
+		write(*,*) ERROR_STR//"no input json filename or string given"
 
 	else if (args%has_filename .and. args%has_str) then
 		error =.true.
-		write(*,*) ERROR_STR//"both JSON filename and string given"
+		write(*,*) ERROR_STR//"both json filename and string given"
 	end if
 
 	!********
@@ -199,15 +199,15 @@ function parse_args() result(args)
 		write(*,*)
 		write(*,*) fg_bold//"Options:"//color_reset
 		write(*,*) "    --help       Show this help"
-		write(*,*) "    FILE.json    Input JSON filename"
-		write(*,*) "    --string     Input JSON string"
-		write(*,*) "    --pointer    JSON pointer path"
-		write(*,*) "    --lint       Check JSON for syntax errors"
+		write(*,*) "    FILE.json    Input json filename"
+		write(*,*) "    --string     Input json string"
+		write(*,*) "    --pointer    json pointer path"
+		write(*,*) "    --lint       Check json for syntax errors"
 		write(*,*) "    --compact    Format compactly without whitespace"
 		write(*,*) "    --first-dup  Keep first duplicate key, default last"
 		write(*,*) "    --no-dup     Do not allow duplicate keys"
 		write(*,*) "    --quiet      Decrease log verbosity"
-		write(*,*) "    --tokens     Dump tokens without parsing JSON"
+		write(*,*) "    --tokens     Dump tokens without parsing json"
 		write(*,*) "    --version    Show the jsonf version number"
 		write(*,*)
 
