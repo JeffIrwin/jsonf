@@ -9,6 +9,7 @@ module jsonf__args
 
 		logical :: &
 			help            = .false., &
+			version         = .false., &
 			lint            = .false., &
 			compact         = .false., &
 			error_dup       = .false., &
@@ -81,6 +82,9 @@ function parse_args() result(args)
 		select case (arg)
 		case ("-h", "-help", "--help")
 			args%help = .true.
+
+		case ("--version")
+			args%version = .true.
 
 		case ("-l", "--lint")
 			args%lint = .true.
@@ -160,9 +164,12 @@ function parse_args() result(args)
 		end select
 
 	end do
-	if (.not. args%has_filename .and. .not. args%has_str .and. .not. args%help) then
+	if (.not. args%has_filename .and. .not. args%has_str &
+		.and. .not. (args%help .or. args%version)) then
+
 		error =.true.
 		write(*,*) ERROR_STR//"no input JSON filename or string given"
+
 	else if (args%has_filename .and. args%has_str) then
 		error =.true.
 		write(*,*) ERROR_STR//"both JSON filename and string given"
@@ -170,9 +177,12 @@ function parse_args() result(args)
 
 	!********
 
-	if (error .or. args%help) then
+	if (error .or. args%help .or. args%version) then
 
 		write(*, "(a)") fg_bright_magenta//"jsonf "//get_jsonf_vers()//color_reset
+		if (args%version) call jsonf_exit(EXIT_SUCCESS, quiet = .true.)
+		! Could add compiler details, build date, etc. like syntran
+
 		write(*,*) fg_bold//"Usage:"//color_reset
 		write(*,*) "    jsonf -h | --help"
 		write(*,*) "    jsonf FILE.json"
@@ -183,6 +193,7 @@ function parse_args() result(args)
 		write(*,*) "    jsonf -l | --lint"
 		write(*,*) "    jsonf -q | --quiet"
 		write(*,*) "    jsonf -t | --tokens"
+		write(*,*) "    jsonf --version"
 		! TODO: document -Werror=commas, -Wcommas, etc.  This is getting long.
 		! Maybe short help and long help options
 		write(*,*)
@@ -196,6 +207,7 @@ function parse_args() result(args)
 		write(*,*) "    --no-dup     Do not allow duplicate keys"
 		write(*,*) "    --quiet      Decrease log verbosity"
 		write(*,*) "    --tokens     Dump tokens without parsing JSON"
+		write(*,*) "    --version    Show the jsonf version number"
 		write(*,*)
 
 		if (error) call panic("")
