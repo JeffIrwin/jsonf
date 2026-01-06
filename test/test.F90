@@ -460,14 +460,50 @@ function rand_vec_i32(n, min_val, max_val) result(vec)
 	integer, intent(in) :: max_val    ! Maximum value (inclusive)
 	integer, dimension(n) :: vec      ! Output vector
 	!********
-	double precision :: rand_val      ! Single random value
+	double precision :: rand_f64      ! Single random value
 	integer :: i
 	do i = 1, n
 		! Generate random integers one at a time
-		call random_number(rand_val)
-		vec(i) = int(min_val + floor(rand_val * (int(max_val,8) - min_val + 1), 8), 4)
+		call random_number(rand_f64)
+		vec(i) = int(min_val + floor(rand_f64 * (int(max_val,8) - min_val + 1), 8), 4)
 	end do
 end function rand_vec_i32
+
+integer function rand_i32(min_val, max_val) result(r)
+	! Random integer in inclusize bounds
+	integer, intent(in) :: min_val, max_val
+	double precision :: rand_f64      ! Single random value
+	call random_number(rand_f64)
+	r = int(min_val + floor(rand_f64 * (int(max_val,8) - min_val + 1), 8), 4)
+end function rand_i32
+
+function rand_str(len_) result(str)
+	! Generate a random string of given length
+	integer, intent(in) :: len_
+	character(len=len_) :: str
+	integer :: i, j
+	character(len=*), parameter :: chars = &
+		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	do i = 1, len_
+		j = rand_i32(1, len(chars))
+		str(i:i) = chars(j:j)
+	end do
+end function rand_str
+
+function rand_perm(n)
+	! Fisher-Yates shuffle
+	integer, intent(in) :: n
+	integer, allocatable :: rand_perm(:)
+	!********
+	integer :: i, j
+
+	rand_perm = [(i, i = 1, n)]  ! initially identity
+	do i = 1, n-1
+		j = rand_i32(i, n-1)
+		rand_perm([i, j]) = rand_perm([j, i])
+	end do
+
+end function rand_perm
 
 subroutine test_sort(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
@@ -514,6 +550,83 @@ subroutine test_sort(nfail, ntot)
 	end do
 
 end subroutine  test_sort
+
+subroutine test_levenshtein(nfail, ntot)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: a, b, edits
+	integer :: i, n, dist, expect, expect_, reps, loc
+	integer, allocatable :: locs(:)
+
+	a = "sitting"
+	b = "kitten"
+	dist = levenshtein(a, b)
+	TEST(dist == 3, "test_levenshtein 1", nfail, ntot)
+
+	! Fuzz test.  This does not cover combinations of
+	! insertions/deletions/substitutions, only each edit type in isolation
+	do expect = 0, 10
+	do n = 5, 25
+	do reps = 1, 2
+		if (expect > n) cycle  ! can't make more edits than str len
+		a = rand_str(n)
+
+		! Make `expect` edits to a
+		edits = rand_str(expect)
+
+		!********
+		! Insertion: insert edits after random locations
+		locs  = rand_vec_i32(expect, 0, n)
+		b = a
+		do i = 1, expect
+			loc = locs(i)
+			b = b(1: loc) // edits(i:i) // b(loc+1:)
+		end do
+		dist = levenshtein(a, b)
+		TEST(dist == expect, "test_levenshtein insert fuzz", nfail, ntot)
+
+		!********
+		! Deletion: delete random chars
+		b = a
+		do i = 1, expect
+			loc = rand_i32(1, len(b))
+			b = b(1:loc-1) // b(loc+1:)
+		end do
+		TEST(dist == expect, "test_levenshtein delete fuzz", nfail, ntot)
+
+		!********
+		! Substitution: sub edits at random locs. Re-use `edits` str from insertion test
+		!
+		! It's tricky to generate the correct expected number of substitution
+		! edits.  Consider the two strings where every single character has been
+		! substituted:
+		!
+		!     a = "abcdefgh"
+		!     b = "bcdefghi"
+		!
+		! The edit distance is of course not 8, because we can make an
+		! equivalent edit in 2 steps: delete the first "a" and then insert an
+		! "i"
+		!
+		! Hence, we multiply location by 2 to only change even indices
+		b = a
+		locs = rand_perm(n)  ! edits must be unique. use a slice of a random permutation
+		expect_ = 0
+		do i = 1, expect
+			loc = 2 * locs(i)
+			if (loc > len(b)) cycle
+			if (a(loc:loc) == edits(i:i)) cycle  ! skip no-op substitutions
+			expect_ = expect_ + 1
+			b(loc:loc) = edits(i:i)
+		end do
+		dist = levenshtein(a, b)
+		TEST(dist == expect_, "test_levenshtein substitution fuzz", nfail, ntot)
+
+	end do
+	end do
+	end do
+
+end subroutine test_levenshtein
 
 subroutine test_float_jsons(nfail, ntot)
 	! Float formatting makes it annoying to test str output, so this is a
@@ -919,8 +1032,6 @@ subroutine test_num_jsons(nfail, ntot)
 	logical :: is_valid
 	type(str_vec_t) :: str_vec
 
-	is_valid = is_valid_json_number("123.456")
-
 	!********
 	! Valid numbers
 	str_vec = new_str_vec()
@@ -973,7 +1084,7 @@ subroutine test_num_jsons(nfail, ntot)
 	call str_vec%push("-1.0e-10")
 	call str_vec%push("123.456E789")
 
-	do i = 1, str_vec%len
+	do i = 1, i32(str_vec%len)
 		is_valid = is_valid_json_number(str_vec%vec(i)%str)
 		TEST(is_valid .eqv. .true., "test_num_jsons 1, i="//to_str(i), nfail, ntot)
 	end do
@@ -1062,7 +1173,7 @@ subroutine test_num_jsons(nfail, ntot)
 	call str_vec%push("e10")
 	call str_vec%push("-E1")
 
-	do i = 1, str_vec%len
+	do i = 1, i32(str_vec%len)
 		is_valid = is_valid_json_number(str_vec%vec(i)%str)
 		TEST(is_valid .eqv. .false., "test_num_jsons 2, i="//to_str(i), nfail, ntot)
 	end do
@@ -1085,6 +1196,7 @@ program test
 	call seed_rng_zeros()
 
 	call test_sort(nfail, ntot)
+	call test_levenshtein(nfail, ntot)
 	call test_num_jsons(nfail, ntot)
 	call test_basic_jsons(nfail, ntot)
 	call test_float_jsons(nfail, ntot)

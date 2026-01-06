@@ -5,6 +5,7 @@ module jsonf
 	implicit none
 
 	! TODO:
+	! - --version arg
 	! - float improvements:
 	!   * auto convert i64 overflows to f64?
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
@@ -40,6 +41,7 @@ module jsonf
 	!   * aoc-fortran pips solver
 	!   * ribbit?
 	! - spellcheck for bad keys and bad cmd args
+	!   * levenshtein distance
 	! - add other stream types
 	!   * stdin
 	!   * network? probably not
@@ -1038,12 +1040,11 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 				cycle
 			end if
 		end if
-		!call sb%push(ptr(j:j))
 		key(k:k) = ptr(j:j)
 		k = k + 1
 	end do
 	key = key(1:k-1)
-	!key = escape(sb%trim())
+	!key = escape(key)
 	!print *, "key = ", key
 
 	select case (val%type)
@@ -1493,6 +1494,41 @@ function djb2_hash(str) result(hash)
 		hash = ((hash * 33) + iachar(str(i:i)))  ! hash * 33 + c
 	end do
 end function djb2_hash
+
+integer function levenshtein(s, t)
+	! Get the Levenshtein distance between two strings `s` and `t`
+	use jsonf__blarg
+	character(len=*), intent(in) :: s, t
+	!********
+	integer :: m, n, i, j, deletion_cost, insertion_cost, substitution_cost
+	integer, allocatable :: v0(:), v1(:), tmp(:)
+
+	m = len(s)
+	n = len(t)
+	v0 = range_i32(0, n)
+	allocate(v1(n+1))
+
+	do i = 1, m
+		v1(1) = i+1
+		do j = 1, n
+			deletion_cost  = v0(j+1) + 1
+			insertion_cost = v1(j) + 1
+			if (s(i:i) == t(j:j)) then
+				substitution_cost = v0(j)
+			else
+				substitution_cost = v0(j) + 1
+			end if
+			v1(j+1) = min(deletion_cost, insertion_cost, substitution_cost)
+		end do
+
+		! swap v0 with v1
+		call move_alloc(v0, tmp)  !tmp=v0
+		call move_alloc(v1, v0)   !v0=v1
+		call move_alloc(tmp, v1)  !v1=tmp
+	end do
+	levenshtein = v0(n+1)
+
+end function levenshtein
 
 end module jsonf
 
