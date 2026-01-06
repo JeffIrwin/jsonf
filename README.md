@@ -31,26 +31,27 @@ of the current options
 jsonf 0.2.0
  Usage:
      jsonf -h | --help
-     jsonf FILE.json
-     jsonf (-s | --string) STRING
-     jsonf -c | --compact
-     jsonf -d | --no-dup
-     jsonf -f | --first-dup
-     jsonf -l | --lint
-     jsonf -q | --quiet
-     jsonf -t | --tokens
+     jsonf FILE.json [(-p|--pointer) POINTER]
+     jsonf (-s|--string) STRING [(-p|--pointer) POINTER]
+     jsonf -c|--compact
+     jsonf -d|--no-dup
+     jsonf -f|--first-dup
+     jsonf -l|--lint
+     jsonf -q|--quiet
+     jsonf -t|--tokens
      jsonf --version
 
  Options:
      --help       Show this help
-     FILE.json    Input JSON filename
-     --string     Input JSON string
-     --lint       Check JSON for syntax errors
+     FILE.json    Input json filename
+     --string     Input json string
+     --pointer    json pointer path
+     --lint       Check json for syntax errors
      --compact    Format compactly without whitespace
      --first-dup  Keep first duplicate key, default last
      --no-dup     Do not allow duplicate keys
      --quiet      Decrease log verbosity
-     --tokens     Dump tokens without parsing JSON
+     --tokens     Dump tokens without parsing json
      --version    Show the jsonf version number
 ```
 
