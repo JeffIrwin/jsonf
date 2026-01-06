@@ -34,6 +34,7 @@ module jsonf__utils
 			fg_bright_yellow      = ESC//"[93m", &
 			fg_bright_blue        = ESC//"[94m", &
 			fg_bright_magenta     = ESC//"[95m", &
+			fg_cyan               = ESC//"[36m", &
 			fg_bright_cyan        = ESC//"[96m", &
 			fg_bright_white       = ESC//"[97m", &
 			color_reset           = ESC//"[0m"

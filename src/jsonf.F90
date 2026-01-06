@@ -987,7 +987,7 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	integer, intent(in) :: i0  ! index of last '/' separator in ptr path string
 	type(json_val_t) :: outval
 	!********
-	character(len=:), allocatable :: key
+	character(len=:), allocatable :: key, closest
 	integer :: i, j, k
 	integer(kind=4) :: idx
 	logical :: found
@@ -1051,7 +1051,10 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	case (OBJ_TYPE)
 		idx = get_map_idx(val, key, found)
 		if (.not. found) then
-			call panic("key "//quote(key)//" not found")
+			closest = get_closest_key(val, key)
+			write(*, "(a)") ERROR_STR//"key "//quote(key_hi(key))//" not found"
+			write(*, "(a)") "Did you mean "//quote(key_hi(closest))//"?"
+			call panic("")
 		end if
 		call get_val_core(val%vals(idx), ptr, i, outval)
 
@@ -1059,6 +1062,7 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 		idx = read_i32(key) ! TODO: iostat
 		!print *, "idx = ", idx
 		if (idx < 0 .or. idx >= val%narr) then
+			! TODO: print bounds, for consistency with printing closest key
 			call panic("index "//to_str(idx)//" out of bounds")
 		end if
 		call get_val_core(val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
@@ -1068,6 +1072,16 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 	end select
 
 end subroutine get_val_core
+
+function key_hi(str)
+	! I'm setting up a syntax-highlighting framework here for later more general
+	! color JSON output.  I'll probably want to color keys one way, string
+	! values another way, numbers, etc.  Functions might (?) be easier to work with
+	! than string constants when color can be turned off via cmd args
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: key_hi
+	key_hi = fg_cyan//str//color_reset
+end function key_hi
 
 subroutine parse_arr(json, lexer, arr)
 	type(json_t), intent(inout) :: json
@@ -1203,6 +1217,25 @@ subroutine parse_obj(json, lexer, obj)
 	end if
 
 end subroutine parse_obj
+
+function get_closest_key(obj, key) result(closest)
+	! Assuming `key` wasn't found in obj, get the most similarly-spelled one
+	! that actually exists
+	type(json_val_t), intent(in) :: obj
+	character(len=*), intent(in) :: key
+	character(len=:), allocatable :: closest
+	!********
+	integer :: i, dist, min_dist
+	closest = ""
+	min_dist = huge(min_dist)
+	do i = 1, size(obj%keys)
+		if (.not. allocated(obj%keys(i)%str)) cycle
+		dist = levenshtein(key, obj%keys(i)%str)
+		if (dist >= min_dist) cycle
+		min_dist = dist
+		closest = obj%keys(i)%str
+	end do
+end function get_closest_key
 
 integer function get_map_idx(obj, key, found) result(idx)
 	! Find the index of the key in its parent object.  Only return its index to
