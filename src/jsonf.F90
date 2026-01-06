@@ -5,7 +5,6 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - --version arg
 	! - float improvements:
 	!   * auto convert i64 overflows to f64?
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
@@ -40,8 +39,8 @@ module jsonf
 	! - test in other projects
 	!   * aoc-fortran pips solver
 	!   * ribbit?
-	! - spellcheck for bad keys and bad cmd args
-	!   * levenshtein distance
+	! - spellcheck for bad cmd args
+	!   * bad keys done
 	! - add other stream types
 	!   * stdin
 	!   * network? probably not

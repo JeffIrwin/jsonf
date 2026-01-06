@@ -185,14 +185,14 @@ function parse_args() result(args)
 
 		write(*,*) fg_bold//"Usage:"//color_reset
 		write(*,*) "    jsonf -h | --help"
-		write(*,*) "    jsonf FILE.json"
-		write(*,*) "    jsonf (-s | --string) STRING"
-		write(*,*) "    jsonf -c | --compact"
-		write(*,*) "    jsonf -d | --no-dup"
-		write(*,*) "    jsonf -f | --first-dup"
-		write(*,*) "    jsonf -l | --lint"
-		write(*,*) "    jsonf -q | --quiet"
-		write(*,*) "    jsonf -t | --tokens"
+		write(*,*) "    jsonf FILE.json [(-p|--pointer) POINTER]"
+		write(*,*) "    jsonf (-s|--string) STRING [(-p|--pointer) POINTER]"
+		write(*,*) "    jsonf -c|--compact"
+		write(*,*) "    jsonf -d|--no-dup"
+		write(*,*) "    jsonf -f|--first-dup"
+		write(*,*) "    jsonf -l|--lint"
+		write(*,*) "    jsonf -q|--quiet"
+		write(*,*) "    jsonf -t|--tokens"
 		write(*,*) "    jsonf --version"
 		! TODO: document -Werror=commas, -Wcommas, etc.  This is getting long.
 		! Maybe short help and long help options
@@ -201,6 +201,7 @@ function parse_args() result(args)
 		write(*,*) "    --help       Show this help"
 		write(*,*) "    FILE.json    Input JSON filename"
 		write(*,*) "    --string     Input JSON string"
+		write(*,*) "    --pointer    JSON pointer path"
 		write(*,*) "    --lint       Check JSON for syntax errors"
 		write(*,*) "    --compact    Format compactly without whitespace"
 		write(*,*) "    --first-dup  Keep first duplicate key, default last"
