@@ -859,13 +859,35 @@ end function is_expo
 
 !===============================================================================
 
-logical function is_letter(c)
-
+logical function is_lower(c)
 	character, intent(in) :: c
+	is_lower = 'a' <= c .and. c <= 'z'
+end function is_lower
+logical function is_upper(c)
+	character, intent(in) :: c
+	is_upper = 'A' <= c .and. c <= 'Z'
+end function is_upper
 
-	is_letter = ('a' <= c .and. c <= 'z') .or. ('A' <= c .and. c <= 'Z')
-
+logical function is_letter(c)
+	character, intent(in) :: c
+	is_letter = is_lower(c) .or. is_upper(c)
 end function is_letter
+
+!********
+
+function to_lower(str)
+	! Not unicode safe
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: to_lower
+	!********
+	character :: c
+	integer :: i
+	to_lower = str
+	do i = 1, len(str)
+		c = str(i:i)
+		if (is_upper(c)) to_lower(i:i) = char(ichar(c) + ichar('a') - ichar("A"))
+	end do
+end function to_lower
 
 !===============================================================================
 

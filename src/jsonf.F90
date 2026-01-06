@@ -1221,16 +1221,22 @@ end subroutine parse_obj
 function get_closest_key(obj, key) result(closest)
 	! Assuming `key` wasn't found in obj, get the most similarly-spelled one
 	! that actually exists
+	!
+	! Convert to lowercase before comparing dist. Of course, use original case
+	! for final returned "closest" value
 	type(json_val_t), intent(in) :: obj
 	character(len=*), intent(in) :: key
 	character(len=:), allocatable :: closest
 	!********
+	character(len=:), allocatable :: key_low, obj_low
 	integer :: i, dist, min_dist
 	closest = ""
 	min_dist = huge(min_dist)
+	key_low = to_lower(key)
 	do i = 1, size(obj%keys)
 		if (.not. allocated(obj%keys(i)%str)) cycle
-		dist = levenshtein(key, obj%keys(i)%str)
+		obj_low = to_lower(obj%keys(i)%str)
+		dist = levenshtein(key, obj_low)
 		if (dist >= min_dist) cycle
 		min_dist = dist
 		closest = obj%keys(i)%str
