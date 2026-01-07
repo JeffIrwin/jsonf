@@ -187,12 +187,12 @@ function parse_args() result(args)
 		write(*,*) "    jsonf -h | --help"
 		write(*,*) "    jsonf FILE.json [(-p|--pointer) POINTER]"
 		write(*,*) "    jsonf (-s|--string) STRING [(-p|--pointer) POINTER]"
-		write(*,*) "    jsonf -c|--compact"
-		write(*,*) "    jsonf -d|--no-dup"
-		write(*,*) "    jsonf -f|--first-dup"
-		write(*,*) "    jsonf -l|--lint"
-		write(*,*) "    jsonf -q|--quiet"
-		write(*,*) "    jsonf -t|--tokens"
+		write(*,*) "    jsonf -c | --compact"
+		write(*,*) "    jsonf -d | --no-dup"
+		write(*,*) "    jsonf -f | --first-dup"
+		write(*,*) "    jsonf -l | --lint"
+		write(*,*) "    jsonf -q | --quiet"
+		write(*,*) "    jsonf -t | --tokens"
 		write(*,*) "    jsonf --version"
 		! TODO: document -Werror=commas, -Wcommas, etc.  This is getting long.
 		! Maybe short help and long help options
