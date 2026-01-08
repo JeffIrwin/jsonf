@@ -132,6 +132,9 @@ module jsonf
 		!********
 		! Public members
 
+		logical :: is_ok = .true.  !> error state
+		type(str_vec_t) :: diagnostics
+
 		! Syntax strictness/permissiveness options
 		logical :: &
 			error_duplicate_keys  = .false., &
@@ -144,9 +147,10 @@ module jsonf
 		! String, print, and write output formatting options
 		character(len=:), allocatable :: indent
 		logical :: compact = .false.
-		logical :: hashed_order = .false.  ! if false, output in the same order as the input source
+		logical :: hashed_order = .false.  !> if false, output in the same order as the input source
+		logical :: print_errors_immediately = .true.  !> if false, you can call json%print_errors() afterwards
 
-		logical :: lint = .false.
+		logical :: lint = .false.  ! don't save objects or arrays while linting for performance
 
 		!********
 		! Private members
@@ -156,13 +160,14 @@ module jsonf
 
 		contains
 			procedure :: &
-				get_val   => get_val_json, &
-				write     => write_json, &
-				print     => print_json, &
-				to_str    => json_to_str, &
-				read_file => read_file_json, &
-				read_str  => read_str_json, &
-				parse     => parse_json
+				get_val      => get_val_json, &
+				write        => write_json, &
+				print        => print_json, &
+				print_errors => json_print_errors, &
+				to_str       => json_to_str, &
+				read_file    => read_file_json, &
+				read_str     => read_str_json, &
+				parse        => parse_json
 	end type json_t
 
 	type token_t
@@ -177,6 +182,7 @@ module jsonf
 		!character(len=:), allocatable :: src_file  ! already part of stream_t encapsed in lexer
 		integer(kind=8)     :: pos  ! TODO: unused?
 		integer             :: line, col
+		logical             :: is_ok = .true.  ! error state
 		type(str_vec_t)     :: diagnostics
 		type(str_builder_t) :: line_str
 		type(stream_t)      :: stream
@@ -186,17 +192,19 @@ module jsonf
 		type(token_t) :: current_token, previous_token
 
 		logical :: &
-			error_numbers         = .false., &
-			warn_numbers          = .false.
+			error_numbers            = .false., &
+			warn_numbers             = .false., &
+			print_errors_immediately = .true.
 
 		contains
 			procedure :: &
 				lex, &
-				match => lexer_match, &
-				next_char  => lexer_next_char, &
-				next_token => lexer_next_token, &
+				match        => lexer_match, &
+				next_char    => lexer_next_char, &
+				next_token   => lexer_next_token, &
 				current_kind => lexer_current_kind, &
-				finish_line  => lexer_finish_line
+				finish_line  => lexer_finish_line, &
+				push_err     => lexer_push_err
 	end type lexer_t
 
 	integer, parameter :: &
@@ -652,6 +660,7 @@ function new_lexer(stream, json) result(lexer)
 	if (present(json)) then
 		lexer%warn_numbers  = json%warn_numbers
 		lexer%error_numbers = json%error_numbers
+		lexer%print_errors_immediately = json%print_errors_immediately
 	end if
 
 	lexer%line = 1
@@ -740,8 +749,9 @@ subroutine parse_json(json, stream)
 	type(lexer_t) :: lexer
 
 	lexer = new_lexer(stream, json)
-	!write(*,*) "Parsing JSON tokens ..."
 	call parse_val(json, lexer, json%root)
+	json%is_ok = lexer%is_ok
+	json%diagnostics = lexer%diagnostics
 
 end subroutine parse_json
 
@@ -814,8 +824,8 @@ recursive function val_to_str(json, val) result(str)
 	end select
 end function val_to_str
 
-subroutine write_json(this, filename, unit_)
-	class(json_t) :: this
+subroutine write_json(json, filename, unit_)
+	class(json_t) :: json
 	character(len=*), intent(in), optional :: filename
 	integer, intent(in), optional :: unit_
 	!********
@@ -828,7 +838,7 @@ subroutine write_json(this, filename, unit_)
 		unit__ = OUTPUT_UNIT
 	end if
 
-	write(unit__, "(a)") json_to_str(this)
+	write(unit__, "(a)") json_to_str(json)
 
 	if (present(filename)) then
 		!print *, "Closing unit "//to_str(unit__)
@@ -837,26 +847,38 @@ subroutine write_json(this, filename, unit_)
 
 end subroutine write_json
 
-subroutine print_json(this, msg)
-	class(json_t) :: this
+subroutine json_print_errors(json, msg)
+	class(json_t) :: json
+	character(len=*), intent(in), optional :: msg
+	!********
+	integer :: i
+	integer, parameter :: unit_ = OUTPUT_UNIT  ! opt arg?
+	! Maybe add max_errors member?
+	do i = 1, i32(json%diagnostics%len)
+		write(unit_, "(a)") json%diagnostics%vec(i)%str
+	end do
+end subroutine json_print_errors
+
+subroutine print_json(json, msg)
+	class(json_t) :: json
 	character(len=*), intent(in), optional :: msg
 	!********
 	if (present(msg)) then
 		if (msg /= "") write(*, "(a)") msg
 	end if
-	call write_json(this)
+	call write_json(json)
 end subroutine print_json
 
-function json_to_str(this) result(str)
-	class(json_t) :: this
+function json_to_str(json) result(str)
+	class(json_t) :: json
 	character(len = :), allocatable :: str
 	!********
-	if (.not. allocated(this%indent)) then
+	if (.not. allocated(json%indent)) then
 		! I would just initialize this in the type declaration but Fortran is redacted
-		this%indent = INDENT_DEFAULT
+		json%indent = INDENT_DEFAULT
 	end if
-	this%indent_level = 0
-	str = val_to_str(this, this%root)
+	json%indent_level = 0
+	str = val_to_str(json, json%root)
 end function json_to_str
 
 recursive function keyval_to_str(json, obj, i, indent, last) result(str)
@@ -1013,6 +1035,8 @@ subroutine parse_val(json, lexer, val)
 		call panic("unexpected value type in object of kind " // &
 			kind_name(lexer%current_kind()))
 	end select
+	if (.not. lexer%is_ok) return
+
 end subroutine parse_val
 
 function get_val_json(json, ptr) result(val)
@@ -1162,6 +1186,7 @@ subroutine parse_arr(json, lexer, arr)
 
 		call parse_val(json, lexer, val)
 		!print *, "val = ", val%to_str()
+		if (.not. lexer%is_ok) return
 
 		if (.not. json%lint) then
 			n0 = size(arr%arr)
@@ -1241,6 +1266,7 @@ subroutine parse_obj(json, lexer, obj)
 
 		call lexer%match(COLON_TOKEN)
 		call parse_val(json, lexer, val)
+		if (.not. lexer%is_ok) return
 		!print *, "val = ", val%to_str()
 
 		if (.not. json%lint) then
@@ -1254,25 +1280,10 @@ subroutine parse_obj(json, lexer, obj)
 		case (RBRACE_TOKEN)
 			! Do nothing
 		case default
-			!!print *, "pos = ", lexer%pos
-			!!print *, "pos = ", lexer%stream%pos
-
-			!!print *, "line = ", lexer%line
-			!!print *, "col  = ", lexer%col
-			!print *, "l0:c0 = ", to_str(lexer%previous_token%line)//":"//to_str(lexer%previous_token%col)
-			!print *, "l :c  = ", to_str(lexer%current_token%line)//":"//to_str(lexer%current_token%col)
-			!print *, "token text = ", quote(lexer%current_token%text)
-			!print *, "token len  = ", len(lexer%current_token%text)
-			!print *, "line.      = ", quote(lexer%line_str%str(1: lexer%line_str%len))
-
-			!call lexer%finish_line()
-			!print *, "line       = ", quote(lexer%line_str%str(1: lexer%line_str%len))
-
 			call err_bad_obj_delim(lexer)
-			call panic("")  ! TODO: don't panic. program can panic but not lib
+			return
+			!call panic("")  ! TODO: don't panic. program can panic but not lib
 
-			!call panic("expected `,` or `}` while parsing object, got token " &
-			!	//quote(kind_name(lexer%current_kind())))
 		end select
 		!if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
@@ -1305,7 +1316,7 @@ end subroutine parse_obj
 subroutine err_bad_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer
 	!********
-	character(len=:), allocatable :: descr, summary, err, underline
+	character(len=:), allocatable :: descr, summary, err, context
 	character(len = :), allocatable :: str_i, spaces, fg1, rst, col, text
 	integer :: str_i_len, length, icol
 
@@ -1330,7 +1341,7 @@ subroutine err_bad_obj_delim(lexer)
 	!print *, descr
 
 	!********
-	! TODO: refactor the "underline" part as a fn, like syntran. It needs to be
+	! TODO: refactor the underline/context part as a fn, like syntran. It needs to be
 	! general and take start/end cols instead of just lexer/token object
 
 
@@ -1367,7 +1378,7 @@ subroutine err_bad_obj_delim(lexer)
 	! Pad spaces the same length as the line number string
 	spaces = repeat(' ', str_i_len + 2)
 
-	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
+	context = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
 		//":"//str_i//":"//col//LINE_FEED &
 		//fg1//     spaces//"| "//LINE_FEED &
 		//fg1//" "//str_i//" | "//rst//text//LINE_FEED &
@@ -1375,16 +1386,18 @@ subroutine err_bad_obj_delim(lexer)
 		//repeat(' ', max(icol-1, 0)) &
 		//fg_bright_red//repeat('^', length)//rst
 
-	!print *, "underline = "
-	!print "(a)", underline//rst
+	!print *, "context = "
+	!print "(a)", context//rst
 	!!********
 
 	summary = fg_bright_red//" missing comma or right-brace"//rst
 
-	err = descr // underline // summary
+	!err = descr // context // summary
+	!print *, "err ="
+	!print "(a)", err
+	!call lexer%diagnostics%push(err)
 
-	print *, "err ="
-	print "(a)", err
+	call lexer%push_err(descr, context, summary)
 
 !	err = err_prefix &
 !		//'`&` reference to unexpected expression kind.  references can only ' &
@@ -1392,6 +1405,19 @@ subroutine err_bad_obj_delim(lexer)
 !		//underline(context, span)//" non-name `&` ref"//color_reset
 
 end subroutine err_bad_obj_delim
+
+subroutine lexer_push_err(lexer, description, context, summary)
+	! Maybe this should just take one catted str arg?
+	class(lexer_t) :: lexer
+	character(len=*), intent(in) :: description, context, summary
+	!********
+	character(len=:), allocatable :: err
+	lexer%is_ok = .false.
+	err = description // context // summary
+	call lexer%diagnostics%push(err)
+	if (.not. lexer%print_errors_immediately) return
+	print "(a)", err
+end subroutine lexer_push_err
 
 function get_closest_key(obj, key) result(closest)
 	! Assuming `key` wasn't found in obj, get the most similarly-spelled one
