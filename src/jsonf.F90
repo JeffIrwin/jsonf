@@ -244,7 +244,7 @@ subroutine lexer_next_char(lexer)
 	lexer%current_char =  lexer%stream%get()
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
-		lexer%col = 1
+		lexer%col = 0
 		lexer%line_str = new_str_builder()
 	else
 		lexer%col = lexer%col + 1
@@ -416,10 +416,11 @@ function lex(lexer) result(token)
 
 	if (lexer%current_char == '"') then
 		! String literal
+		sb = new_str_builder()
+		call sb%push(lexer%current_char)
 		call lexer%next_char()  ! skip opening quote
 		start = lexer%pos
 
-		sb = new_str_builder()
 		do
 			!print *, "lexer current = ", lexer%current_char
 
@@ -429,12 +430,12 @@ function lex(lexer) result(token)
 				call sb%push(lexer%current_char)
 				call lexer%next_char()
 			end if
+			call sb%push(lexer%current_char)
 
 			if (lexer%current_char == '"' .or. lexer%stream%is_eof) then
 				exit
 			end if
 
-			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
 		text = sb%trim()
@@ -447,7 +448,8 @@ function lex(lexer) result(token)
 		end if
 		call lexer%next_char()
 
-		sca = new_literal(STR_TYPE, str = text)
+		! The token text includes the outer quotes, but sca does not
+		sca = new_literal(STR_TYPE, str = unquote(text))
 		if (DEBUG > 0) write(*,*) "lex: parsed string = "//quote(sca%str)
 		token = new_token(STR_TOKEN, l0, c0, text, sca)
 
@@ -660,7 +662,7 @@ function new_lexer(stream, json) result(lexer)
 	! Get the first char and token on construction instead of checking later if
 	! we have them
 	lexer%current_char = lexer%stream%get()
-	lexer%col = 1
+	lexer%col = 0
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
 	else
@@ -1267,9 +1269,10 @@ subroutine parse_obj(json, lexer, obj)
 			!print *, "line       = ", quote(lexer%line_str%str(1: lexer%line_str%len))
 
 			call err_bad_obj_delim(lexer)
+			call panic("")  ! TODO: don't panic. program can panic but not lib
 
-			call panic("expected `,` or `}` while parsing object, got token " &
-				//quote(kind_name(lexer%current_kind())))
+			!call panic("expected `,` or `}` while parsing object, got token " &
+			!	//quote(kind_name(lexer%current_kind())))
 		end select
 		!if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
@@ -1302,29 +1305,34 @@ end subroutine parse_obj
 subroutine err_bad_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer
 	!********
-	character(len=:), allocatable :: err, underline
+	character(len=:), allocatable :: descr, summary, err, underline
 	character(len = :), allocatable :: str_i, spaces, fg1, rst, col, text
-	integer :: i1(1), i, j, str_i_len, start, last, length, icol
+	integer :: str_i_len, length, icol
 
-	print *, ""
-	print *, "Starting err_bad_obj_delim()"
-
-	print *, "l0:c0 = ", to_str(lexer%previous_token%line)//":"//to_str(lexer%previous_token%col)
-	print *, "l :c  = ", to_str(lexer%current_token%line)//":"//to_str(lexer%current_token%col)
-	print *, "token text = ", quote(lexer%current_token%text)
-	print *, "token len  = ", len(lexer%current_token%text)
-	print *, "line.      = ", quote(lexer%line_str%str(1: lexer%line_str%len))
+	!print *, ""
+	!print *, "Starting err_bad_obj_delim()"
+	!print *, "l0:c0 = ", to_str(lexer%previous_token%line)//":"//to_str(lexer%previous_token%col)
+	!print *, "l :c  = ", to_str(lexer%current_token%line)//":"//to_str(lexer%current_token%col)
+	!print *, "token text = ", quote(lexer%current_token%text)
+	!print *, "token len  = ", len(lexer%current_token%text)
+	!print *, "line.      = ", quote(lexer%line_str%str(1: lexer%line_str%len))
 
 	call lexer%finish_line()
-	print *, "line       = ", quote(lexer%line_str%str(1: lexer%line_str%len))
+	!print *, "line       = ", quote(lexer%line_str%str(1: lexer%line_str%len))
 
-	err = ERROR_STR // &
-		'expected "," or "}" while while parsing object, got token ' // &
-		kind_name(lexer%current_kind())
+	descr = ERROR_STR // &
+		'missing "," or "}" while while parsing object before ' // &
+		lexer%current_token%text
+		!kind_name(lexer%current_kind())
 		!quote(kind_name(lexer%current_kind()))
 
-	print *, "err = "
-	print *, err
+	!print *, "descr = "
+	!print *, descr
+
+	!********
+	! TODO: refactor the "underline" part as a fn, like syntran. It needs to be
+	! general and take start/end cols instead of just lexer/token object
+
 
 	! Here's an example of a rust error message, from which I'm stealing UX:
 	!
@@ -1344,52 +1352,39 @@ subroutine err_bad_obj_delim(lexer)
 	!
 	! """
 
-	!!col = str(span%start - context%lines(i) + 1)
-	!col = to_str(lexer%previous_token%col)
 	icol = lexer%current_token%col
 	col = to_str(icol)
 
 	fg1 = fg_bright_cyan
-	!fg1 = fg_bright_blue
 	rst = color_reset
-	!str_i = to_str(lexer%previous_token%line)
 	str_i = to_str(lexer%current_token%line)
-
-	!text = lexer%current_token%text
-	text = lexer%line_str%trim()
-
+	text = tabs_to_spaces(lexer%line_str%trim())
 	length = len(lexer%current_token%text)
 	str_i_len = len(str_i)
+	!print *, "text = ", text
 	!print *, 'line # = ', i
 
 	! Pad spaces the same length as the line number string
 	spaces = repeat(' ', str_i_len + 2)
-
-	print *, "text = ", text
-
-	! TODO: convert tabs to spaces for easy, consistent alignment
 
 	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
 		//":"//str_i//":"//col//LINE_FEED &
 		//fg1//     spaces//"| "//LINE_FEED &
 		//fg1//" "//str_i//" | "//rst//text//LINE_FEED &
 		//fg1//     spaces//"| " &
-		!//repeat(' ', max(span%start - context%lines(i), 0)) &
 		//repeat(' ', max(icol-1, 0)) &
-		//fg_bright_red//repeat('^', length)
+		//fg_bright_red//repeat('^', length)//rst
 
-	print *, "underline = "
-	print "(a)", underline
+	!print *, "underline = "
+	!print "(a)", underline//rst
+	!!********
 
-!	underline = line_feed//fg1//spaces(2:)//"--> "//rst//context%src_file &
-!		//":"//str_i//":"//col//line_feed &
-!		//fg1//     spaces//"| "//line_feed &
-!		//fg1//" "//str_i//" | "//rst//text//line_feed &
-!		//fg1//     spaces//"| " &
-!		//repeat(' ', max(span%start - context%lines(i), 0)) &
-!		//fg_bright_red//repeat('^', length)
+	summary = fg_bright_red//" missing comma or right-brace"//rst
 
-!********
+	err = descr // underline // summary
+
+	print *, "err ="
+	print "(a)", err
 
 !	err = err_prefix &
 !		//'`&` reference to unexpected expression kind.  references can only ' &

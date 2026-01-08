@@ -927,6 +927,16 @@ function quote(str)
 	quote = '"'//str//'"'
 end function quote
 
+function unquote(str)
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: unquote
+	if (str(1:1) == '"' .and. str(len(str):len(str)) == '"') then
+		unquote = str(2: len(str)-1)
+		return
+	end if
+	unquote = str
+end function
+
 !===============================================================================
 
 logical function contains(haystack, needle)
@@ -938,6 +948,27 @@ logical function is_all_digits(str)
 	character(len=*), intent(in) :: str
 	is_all_digits = verify(str, DIGIT_CHARS) <= 0
 end function is_all_digits
+
+!===============================================================================
+
+function tabs_to_spaces(str_) result(str_out)
+	! Replace each tab with a *single* space.  This is useful for alignment and
+	! it makes allocation easy
+	character(len = *), intent(in)  :: str_
+	character(len = :), allocatable :: str_out
+
+	integer :: i
+
+	allocate(character(len = len(str_)) :: str_out)
+	do i = 1, len(str_)
+		if (str_(i:i) == tab) then
+			str_out(i:i) = ' '
+		else
+			str_out(i:i) = str_(i:i)
+		end if
+	end do
+
+end function tabs_to_spaces
 
 !===============================================================================
 
