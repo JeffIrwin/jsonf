@@ -1212,7 +1212,8 @@ subroutine parse_arr(json, lexer, arr)
 		case (RBRACKET_TOKEN)
 			! Do nothing
 		case default
-			call panic("expected `,` or `]` while parsing array")
+			call err_bad_arr_delim(lexer)
+			return
 		end select
 		!if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
@@ -1309,6 +1310,25 @@ subroutine parse_obj(json, lexer, obj)
 	end if
 
 end subroutine parse_obj
+
+subroutine err_bad_arr_delim(lexer)
+	type(lexer_t), intent(inout) :: lexer
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: start, length
+
+	descr = ERROR_STR // &
+		'missing "," or "]" while while parsing array before ' // &
+		lexer%current_token%text
+
+	start   = lexer%current_token%col
+	length  = len(lexer%current_token%text)
+	context = underline(lexer, start, length)
+	summary = fg_bright_red//" missing comma or right-bracket"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_bad_arr_delim
 
 subroutine err_bad_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer

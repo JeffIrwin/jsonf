@@ -1196,6 +1196,14 @@ subroutine test_errs(nfail, ntot)
 	expect = "missing comma or right-brace"
 	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
 
+	call json%read_str('[0 2]')
+	expect = "missing comma or right-bracket"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('[0, 2')
+	expect = "missing comma or right-bracket"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
 end subroutine test_errs
 
 logical function err_matches(json, msg)
