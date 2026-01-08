@@ -1282,10 +1282,7 @@ subroutine parse_obj(json, lexer, obj)
 		case default
 			call err_bad_obj_delim(lexer)
 			return
-			!call panic("")  ! TODO: don't panic. program can panic but not lib
-
 		end select
-		!if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
 	!print *, "current  = ", kind_name(lexer%current_kind())
 	!print *, "previous = ", kind_name(lexer%previous_token%kind)
@@ -1316,34 +1313,28 @@ end subroutine parse_obj
 subroutine err_bad_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer
 	!********
-	character(len=:), allocatable :: descr, summary, err, context
-	character(len = :), allocatable :: str_i, spaces, fg1, rst, col, text
-	integer :: str_i_len, length, icol
-
-	!print *, ""
-	!print *, "Starting err_bad_obj_delim()"
-	!print *, "l0:c0 = ", to_str(lexer%previous_token%line)//":"//to_str(lexer%previous_token%col)
-	!print *, "l :c  = ", to_str(lexer%current_token%line)//":"//to_str(lexer%current_token%col)
-	!print *, "token text = ", quote(lexer%current_token%text)
-	!print *, "token len  = ", len(lexer%current_token%text)
-	!print *, "line.      = ", quote(lexer%line_str%str(1: lexer%line_str%len))
-
-	call lexer%finish_line()
-	!print *, "line       = ", quote(lexer%line_str%str(1: lexer%line_str%len))
+	character(len=:), allocatable :: descr, summary, context
+	integer :: start, length
 
 	descr = ERROR_STR // &
 		'missing "," or "}" while while parsing object before ' // &
 		lexer%current_token%text
-		!kind_name(lexer%current_kind())
-		!quote(kind_name(lexer%current_kind()))
 
-	!print *, "descr = "
-	!print *, descr
+	start   = lexer%current_token%col
+	length  = len(lexer%current_token%text)
+	context = underline(lexer, start, length)
+	summary = fg_bright_red//" missing comma or right-brace"//color_reset
 
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_bad_obj_delim
+
+function underline(lexer, start, length)
+	type(lexer_t) :: lexer
+	integer, intent(in) :: start, length
+	character(len=:), allocatable :: underline
 	!********
-	! TODO: refactor the underline/context part as a fn, like syntran. It needs to be
-	! general and take start/end cols instead of just lexer/token object
-
+	character(len = :), allocatable :: line_num, spaces, fg1, rst, text
 
 	! Here's an example of a rust error message, from which I'm stealing UX:
 	!
@@ -1363,48 +1354,29 @@ subroutine err_bad_obj_delim(lexer)
 	!
 	! """
 
-	icol = lexer%current_token%col
-	col = to_str(icol)
+	call lexer%finish_line()
 
 	fg1 = fg_bright_cyan
 	rst = color_reset
-	str_i = to_str(lexer%current_token%line)
+	line_num = to_str(lexer%current_token%line)
 	text = tabs_to_spaces(lexer%line_str%trim())
-	length = len(lexer%current_token%text)
-	str_i_len = len(str_i)
-	!print *, "text = ", text
-	!print *, 'line # = ', i
 
 	! Pad spaces the same length as the line number string
-	spaces = repeat(' ', str_i_len + 2)
+	spaces = repeat(' ', len(line_num) + 2)
 
-	context = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
-		//":"//str_i//":"//col//LINE_FEED &
+	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
+		//":"//line_num//":"//to_str(start)//LINE_FEED &
 		//fg1//     spaces//"| "//LINE_FEED &
-		//fg1//" "//str_i//" | "//rst//text//LINE_FEED &
+		//fg1//" "//line_num//" | "//rst//text//LINE_FEED &
 		//fg1//     spaces//"| " &
-		//repeat(' ', max(icol-1, 0)) &
+		//repeat(' ', max(start-1, 0)) &
 		//fg_bright_red//repeat('^', length)//rst
 
 	!print *, "context = "
 	!print "(a)", context//rst
 	!!********
 
-	summary = fg_bright_red//" missing comma or right-brace"//rst
-
-	!err = descr // context // summary
-	!print *, "err ="
-	!print "(a)", err
-	!call lexer%diagnostics%push(err)
-
-	call lexer%push_err(descr, context, summary)
-
-!	err = err_prefix &
-!		//'`&` reference to unexpected expression kind.  references can only ' &
-!		//'be made to variable name expressions' &
-!		//underline(context, span)//" non-name `&` ref"//color_reset
-
-end subroutine err_bad_obj_delim
+end function underline
 
 subroutine lexer_push_err(lexer, description, context, summary)
 	! Maybe this should just take one catted str arg?

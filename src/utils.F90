@@ -944,6 +944,11 @@ logical function contains(haystack, needle)
 	contains = scan(haystack, needle) > 0
 end function contains
 
+logical function contains_substr(haystack, needle)
+	character(len=*), intent(in) :: haystack, needle
+	contains_substr = index(haystack, needle) > 0
+end function contains_substr
+
 logical function is_all_digits(str)
 	character(len=*), intent(in) :: str
 	is_all_digits = verify(str, DIGIT_CHARS) <= 0

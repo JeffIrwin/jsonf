@@ -1180,6 +1180,31 @@ subroutine test_num_jsons(nfail, ntot)
 
 end subroutine test_num_jsons
 
+subroutine test_errs(nfail, ntot)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	type(json_t) :: json
+	character(len=:), allocatable :: expect
+
+	json%print_errors_immediately = .false.
+
+	call json%read_str('{"a": 1  "b": 2}')
+	expect = "missing comma or right-brace"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('{"a": 1, "b": 2')
+	expect = "missing comma or right-brace"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+end subroutine test_errs
+
+logical function err_matches(json, msg)
+	! Check if a json's first error message matches a given msg string
+	type(json_t), intent(in) :: json
+	character(len=*), intent(in) :: msg
+	err_matches = contains_substr(json%diagnostics%vec(1)%str, msg)
+end function err_matches
+
 end module jsonf__test
 
 program test
@@ -1209,6 +1234,7 @@ program test
 	call test_in7(nfail, ntot)
 	call test_in8(nfail, ntot)
 	call test_in9(nfail, ntot)
+	call test_errs(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
