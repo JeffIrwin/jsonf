@@ -109,13 +109,13 @@ module jsonf
 
 		! Object members
 		integer(kind=4) :: nkeys = 0
-		type(str_t), allocatable :: keys(:)
-		type(json_val_t), allocatable :: vals(:)
-		integer(kind=4), allocatable :: idx(:)  ! for consistent output of object hashmap members
+		type(str_t), pointer :: keys(:) => null()
+		type(json_val_t), pointer :: vals(:) => null()
+		integer(kind=4), pointer :: idx(:) => null()  ! for consistent output of object hashmap members
 
 		! Array members
 		integer(kind=4) :: narr = 0  ! not needed if we trim after reading? but that would block later post-read insertions
-		type(json_val_t), allocatable :: arr(:)  ! could re-use vals(:) but this might be less error-prone
+		type(json_val_t), pointer :: arr(:) => null()  ! could re-use vals(:) but this might be less error-prone
 
 		! i32 should be ok for sizes and idx. If a JSON object has 2 billion
 		! keys, it will be much more than 2 GB counting quotes and colons, even
@@ -897,6 +897,7 @@ recursive function obj_to_str(json, obj) result(str)
 	indent = repeat(json%indent, json%indent_level)
 
 	if (json%hashed_order) then
+		if (.not. associated(obj%keys)) return
 		ii = 0
 		do i = 1, size(obj%keys)
 			if (allocated(obj%keys(i)%str)) then
@@ -905,6 +906,7 @@ recursive function obj_to_str(json, obj) result(str)
 			end if
 		end do
 	else
+		if (.not. associated(obj%idx)) return
 		do ii = 1, obj%nkeys
 			i = obj%idx(ii)
 			call sb%push(keyval_to_str(json, obj, i, indent, ii == obj%nkeys))
@@ -1091,7 +1093,7 @@ subroutine parse_arr(json, lexer, arr)
 	integer :: idx
 	integer(kind=8) :: i, n, n0 ! TODO: kind?
 	type(json_val_t) :: val
-	type(json_val_t), allocatable :: old_arr(:)
+	type(json_val_t), pointer :: old_arr(:)
 
 	if (DEBUG > 0) print *, "Starting parse_arr()"
 
@@ -1117,7 +1119,9 @@ subroutine parse_arr(json, lexer, arr)
 			if (idx > n0) then
 				! Resize array dynamically
 				n = n0 * 2
-				call move_alloc(arr%arr, old_arr)
+				allocate(old_arr(n0))
+				old_arr(:) = arr%arr(:)
+				deallocate(arr%arr)
 				allocate(arr%arr(n))
 				do i = 1, n0
 					call move_val(old_arr(i), arr%arr(i))
@@ -1232,6 +1236,7 @@ function get_closest_key(obj, key) result(closest)
 	closest = ""
 	min_dist = huge(min_dist)
 	key_low = to_lower(key)
+	if (.not. associated(obj%keys)) return
 	do i = 1, size(obj%keys)
 		if (.not. allocated(obj%keys(i)%str)) cycle
 		obj_low = to_lower(obj%keys(i)%str)
@@ -1277,9 +1282,18 @@ subroutine set_map(json, obj, key, val)
 	type(json_val_t), intent(inout) :: val  ! intent out because it gets moved instead of copied
 	!********
 	integer(kind=8) :: i, ii, n, n0, old_nkeys ! TODO: kind 4?
-	integer(kind=4), allocatable :: old_idx(:)
-	type(str_t), allocatable :: old_keys(:)
-	type(json_val_t), allocatable :: old_vals(:)
+	integer(kind=4), pointer :: old_idx(:)
+	type(str_t), pointer :: old_keys(:)
+	type(json_val_t), pointer :: old_vals(:)
+
+	if (.not. associated(obj%keys)) then
+		! First insertion, allocate initial storage
+		allocate(obj%keys(2))
+		allocate(obj%vals(2))
+		allocate(obj%idx(2))
+		call set_map_core(json, obj, key, val)
+		return
+	end if
 
 	n0 = size(obj%keys)
 	if (obj%nkeys * 2 >= n0) then
@@ -1289,9 +1303,10 @@ subroutine set_map(json, obj, key, val)
 
 		! Just manually manage idx growth if we have to do it here anyway.
 		! Otherwise it could be an i64_vec_t
-		call move_alloc(obj%keys, old_keys)
-		call move_alloc(obj%vals, old_vals)
-		call move_alloc(obj%idx, old_idx)
+		old_keys => obj%keys
+		old_vals => obj%vals
+		old_idx => obj%idx
+		nullify(obj%keys, obj%vals, obj%idx)
 
 		allocate(obj%keys (n))
 		allocate(obj%vals (n))
@@ -1306,6 +1321,7 @@ subroutine set_map(json, obj, key, val)
 		deallocate(old_idx)
 		deallocate(old_vals)
 		deallocate(old_keys)
+		nullify(old_idx, old_vals, old_keys)
 	end if
 	call set_map_core(json, obj, key, val)
 
@@ -1365,13 +1381,15 @@ subroutine move_val(src, dst)
 	select case (src%type)
 	case (OBJ_TYPE)
 		dst%nkeys = src%nkeys
-		call move_alloc(src%keys , dst%keys)
-		call move_alloc(src%vals , dst%vals)
-		call move_alloc(src%idx  , dst%idx)
+		dst%keys => src%keys
+		dst%vals => src%vals
+		dst%idx => src%idx
+		nullify(src%keys, src%vals, src%idx)
 
 	case (ARR_TYPE)
 		dst%narr = src%narr
-		call move_alloc(src%arr, dst%arr)
+		dst%arr => src%arr
+		nullify(src%arr)
 
 	case default
 		! Lightweight scalars are actually just copied
@@ -1391,8 +1409,10 @@ recursive subroutine copy_val(dst, src)
 	select case (src%type)
 	case (OBJ_TYPE)
 		dst%nkeys = src%nkeys
-		dst%keys  = src%keys
-		dst%idx   = src%idx
+		allocate(dst%keys( size(src%keys) ))
+		allocate(dst%idx( size(src%idx) ))
+		dst%keys = src%keys
+		dst%idx = src%idx
 
 		allocate(dst%vals( size(src%vals) ))
 		do i = 1, size(src%vals)
