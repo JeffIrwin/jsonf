@@ -251,6 +251,7 @@ subroutine lexer_next_char(lexer)
 	lexer%previous_char = lexer%current_char
 	lexer%current_char =  lexer%stream%get()
 	if (lexer%current_char == LINE_FEED) then
+		! The line feed is column 0, and the first char after the line feed is column 1
 		lexer%line = lexer%line + 1
 		lexer%col = 0
 		lexer%line_str = new_str_builder()
@@ -320,10 +321,9 @@ function lex(lexer) result(token)
 	class(lexer_t) :: lexer
 	type(token_t) :: token
 	!********
-	character(len=:), allocatable :: text, text_strip
-	integer :: io
+	character(len=:), allocatable :: text, text_strip, reason
+	integer :: io, l0, c0
 	integer(kind=8) :: start, end_, i64
-	integer :: l0, c0
 	logical :: float_, is_valid
 	real(kind=8) :: f64
 	type(str_builder_t) :: sb
@@ -387,13 +387,16 @@ function lex(lexer) result(token)
 
 		!print *, "lexer%error_numbers = ", lexer%error_numbers
 		if (lexer%warn_numbers .or. lexer%error_numbers) then
-			is_valid = is_valid_json_number(text_strip)
+			is_valid = is_valid_json_number(text_strip, reason)
 			!print *, "is_valid = ", is_valid
 			if (.not. is_valid) then
 				if (lexer%warn_numbers) then
-					write(*, "(a)") WARN_STR//"invalid number "//quote(text)
+					! TODO: should warnings be pushed as a diagnostic? It would be nice to underline them in context like errors
+					write(*, "(a)") WARN_STR//"invalid number "//quote(text)//" ("//reason//")"
 				else if (lexer%error_numbers) then
-					call panic("invalid number "//quote(text))
+					call err_invalid_number(lexer, c0, text, reason)
+					token = new_token(BAD_TOKEN, l0, c0, text)
+					return
 				end if
 			end if
 		end if
@@ -514,10 +517,11 @@ function lex(lexer) result(token)
 
 end function lex
 
-logical function is_valid_json_number(str) result(is_valid)
+logical function is_valid_json_number(str, reason) result(is_valid)
 	! Check the correct formatting of a `str` representing a potential JSON
-	! number
+	! number. Optionally return a reason string if validation fails.
 	character(len=*), intent(in) :: str
+	character(len=:), allocatable, intent(out), optional :: reason
 	!********
 	integer :: int_start, int_end, frac_start, frac_end, exp_start, exp_end
 	logical :: has_frac, has_exp
@@ -548,16 +552,25 @@ logical function is_valid_json_number(str) result(is_valid)
 	!print *, "int part = ", quote(str(int_start: int_end))
 
 	is_valid = int_start <= int_end
-	if (.not. is_valid) return
+	if (.not. is_valid) then
+		if (present(reason)) reason = "missing integer part"
+		return
+	end if
 
 	! - If integer part starts with 0, it must be exactly "0"
 	if (str(int_start:int_start) == "0") then
 		is_valid = int_start == int_end
-		if (.not. is_valid) return
+		if (.not. is_valid) then
+			if (present(reason)) reason = "leading zero must be alone"
+			return
+		end if
 	end if
 
 	is_valid = is_all_digits(str(int_start:int_end))
-	if (.not. is_valid) return
+	if (.not. is_valid) then
+		if (present(reason)) reason = "invalid integer part"
+		return
+	end if
 
 	frac_start = int_end + 1
 
@@ -570,16 +583,25 @@ logical function is_valid_json_number(str) result(is_valid)
 	if (has_frac) then
 
 		is_valid = frac_start-1 < int_end+1 .or. any(str(int_end+1: frac_start-1) == [".", "e", "E"])
-		if (.not. is_valid) return
+		if (.not. is_valid) then
+			if (present(reason)) reason = "invalid fractional part format"
+			return
+		end if
 
 		if (str(frac_start:frac_start) == ".") frac_start = frac_start+1
 
 		! - If fractional part exists, require at least one digit
 		is_valid = contains(str(frac_end:frac_end), DIGIT_CHARS)
-		if (.not. is_valid) return
+		if (.not. is_valid) then
+			if (present(reason)) reason = "missing digits after decimal point"
+			return
+		end if
 
 		is_valid = is_all_digits(str(frac_start:frac_end))
-		if (.not. is_valid) return
+		if (.not. is_valid) then
+			if (present(reason)) reason = "invalid fractional part"
+			return
+		end if
 	end if
 
 	has_exp = exp_start <= len(str)
@@ -588,7 +610,10 @@ logical function is_valid_json_number(str) result(is_valid)
 
 		! - If exponent exists, require digits after e/E
 		is_valid = contains(str(exp_end:exp_end), DIGIT_CHARS)
-		if (.not. is_valid) return
+		if (.not. is_valid) then
+			if (present(reason)) reason = "missing digits in exponent"
+			return
+		end if
 
 		! Skip [eE]
 		exp_start = exp_start + 1
@@ -599,7 +624,10 @@ logical function is_valid_json_number(str) result(is_valid)
 		! Now we have just the digit part of the exponent, if it's formatted
 		! correctly
 		is_valid = is_all_digits(str(exp_start:exp_end))
-		if (.not. is_valid) return
+		if (.not. is_valid) then
+			if (present(reason)) reason = "invalid exponent part"
+			return
+		end if
 
 	end if
 
@@ -669,9 +697,9 @@ function new_lexer(stream, json) result(lexer)
 	lexer%stream = stream
 
 	! Get the first char and token on construction instead of checking later if
-	! we have them
+	! we have them. Column starts initially at 1
 	lexer%current_char = lexer%stream%get()
-	lexer%col = 0
+	lexer%col = 1
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
 	else
@@ -751,6 +779,7 @@ subroutine parse_json(json, stream)
 	lexer = new_lexer(stream, json)
 	call parse_val(json, lexer, json%root)
 	json%is_ok = lexer%is_ok
+	!print *, "json%is_ok = ", json%is_ok
 	json%diagnostics = lexer%diagnostics
 
 end subroutine parse_json
@@ -1030,6 +1059,8 @@ subroutine parse_val(json, lexer, val)
 	case (LBRACKET_TOKEN)
 		call parse_arr(json, lexer, val)
 
+	case (BAD_TOKEN)
+		! Do nothing
 	case default
 		!print *, "kind = ", lexer%current_kind()
 		call panic("unexpected value type in object of kind " // &
@@ -1186,6 +1217,7 @@ subroutine parse_arr(json, lexer, arr)
 
 		call parse_val(json, lexer, val)
 		!print *, "val = ", val%to_str()
+		!print *, "lexer%is_ok = ", lexer%is_ok
 		if (.not. lexer%is_ok) return
 
 		if (.not. json%lint) then
@@ -1330,6 +1362,29 @@ subroutine err_arr_delim(lexer)
 
 end subroutine err_arr_delim
 
+subroutine err_invalid_number(lexer, start, number_text, reason)
+	type(lexer_t), intent(inout) :: lexer
+	character(len=*), intent(in) :: number_text, reason
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: start, length
+
+	descr = ERROR_STR // &
+		'invalid number format: ' // quote(number_text) // ' (' // reason // ')'
+	!print *, "descr = ", descr
+
+	!!start   = lexer%current_token%col + 1
+	!print *, "current token text = ", lexer%current_token%text
+	!print *, "start = ", start
+	length  = len(number_text)
+	context = underline(lexer, start, length)
+	summary = fg_bright_red//" invalid number"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+	!print *, "in err_inv*, lexer%is_ok = ", lexer%is_ok
+
+end subroutine err_invalid_number
+
 subroutine err_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer
 	!********
@@ -1408,7 +1463,7 @@ subroutine lexer_push_err(lexer, description, context, summary)
 	err = description // context // summary
 	call lexer%diagnostics%push(err)
 	if (.not. lexer%print_errors_immediately) return
-	print "(a)", err
+	write(*, "(a)") err
 end subroutine lexer_push_err
 
 function get_closest_key(obj, key) result(closest)
