@@ -1212,7 +1212,7 @@ subroutine parse_arr(json, lexer, arr)
 		case (RBRACKET_TOKEN)
 			! Do nothing
 		case default
-			call err_bad_arr_delim(lexer)
+			call err_arr_delim(lexer)
 			return
 		end select
 		!if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
@@ -1281,7 +1281,7 @@ subroutine parse_obj(json, lexer, obj)
 		case (RBRACE_TOKEN)
 			! Do nothing
 		case default
-			call err_bad_obj_delim(lexer)
+			call err_obj_delim(lexer)
 			return
 		end select
 	end do
@@ -1311,7 +1311,7 @@ subroutine parse_obj(json, lexer, obj)
 
 end subroutine parse_obj
 
-subroutine err_bad_arr_delim(lexer)
+subroutine err_arr_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1328,9 +1328,9 @@ subroutine err_bad_arr_delim(lexer)
 
 	call lexer%push_err(descr, context, summary)
 
-end subroutine err_bad_arr_delim
+end subroutine err_arr_delim
 
-subroutine err_bad_obj_delim(lexer)
+subroutine err_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1347,7 +1347,7 @@ subroutine err_bad_obj_delim(lexer)
 
 	call lexer%push_err(descr, context, summary)
 
-end subroutine err_bad_obj_delim
+end subroutine err_obj_delim
 
 function underline(lexer, start, length)
 	type(lexer_t) :: lexer
