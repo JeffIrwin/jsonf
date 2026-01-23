@@ -1184,17 +1184,25 @@ subroutine test_errs(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
 	type(json_t) :: json
-	character(len=:), allocatable :: expect
+	character(len=:), allocatable :: expect, place, under
 
 	json%print_errors_immediately = .false.
 
 	call json%read_str('{"a": 1  "b": 2}')
-	expect = "missing comma or right-brace"
-	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	expect = "missing comma or right-brace"  ! validate error message
+	place  = "<STR_STREAM>:1:10"             ! validate line/column number reporting
+	under  = "1m^^^"//ESC                    ! validate length of underline
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
 
-	call json%read_str('{"a": 1, "b": 2')
+	call json%read_str(LINE_FEED//LINE_FEED//'{"a": 1, "b": 2')
 	expect = "missing comma or right-brace"
-	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	place  = "<STR_STREAM>:3:16"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
 
 	call json%read_str('[0 2]')
 	expect = "missing comma or right-bracket"
@@ -1221,6 +1229,8 @@ subroutine test_errs(nfail, ntot)
 	call json%read_str('[123456789123456789123]')
 	expect = "bad integer number format"
 	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	! TODO: add tests on the line/column reporting and unerline span for every message
 
 end subroutine test_errs
 
