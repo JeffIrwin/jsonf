@@ -404,7 +404,7 @@ function lex(lexer) result(token)
 		if (float_) then
 			read(text_strip, *, iostat = io) f64
 			if (DEBUG > 0) write(*,*) "lex: parsed f64 = "//to_str(f64)
-			if (io == exit_success) then
+			if (io == EXIT_SUCCESS) then
 				sca   = new_literal(F64_TYPE, f64 = f64)
 				token = new_token(F64_TOKEN, l0, c0, text, sca)
 			else
@@ -415,7 +415,7 @@ function lex(lexer) result(token)
 		else  ! i64
 			read(text_strip, *, iostat = io) i64
 			if (DEBUG > 0) write(*,*) "lex: parsed i64 = "//to_str(i64)
-			if (io == exit_success) then
+			if (io == EXIT_SUCCESS) then
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, l0, c0, text, sca)
 			else
@@ -1066,6 +1066,8 @@ subroutine parse_val(json, lexer, val)
 	case (BAD_TOKEN)
 		! Do nothing
 	case default
+		!! TODO: this one should be an internal error -- it means I forgot to
+		!! fully implement a type somehow.  Still probably shouldn't abort
 		!print *, "kind = ", lexer%current_kind()
 		call panic("unexpected value type in object of kind " // &
 			kind_name(lexer%current_kind()))
@@ -1251,7 +1253,6 @@ subroutine parse_arr(json, lexer, arr)
 			call err_arr_delim(lexer)
 			return
 		end select
-		!if (lexer%current_kind() == COMMA_TOKEN) call lexer%next_token()
 	end do
 	arr%narr = idx
 	!print *, "current  = ", kind_name(lexer%current_kind())
@@ -1291,7 +1292,7 @@ subroutine parse_obj(json, lexer, obj)
 	! Initialize hash map storage
 	allocate(obj%keys(INIT_SIZE))
 	allocate(obj%vals(INIT_SIZE))
-	allocate(obj%idx  (INIT_SIZE))
+	allocate(obj%idx (INIT_SIZE))
 	obj%nkeys = 0
 
 	do
