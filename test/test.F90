@@ -1206,11 +1206,20 @@ subroutine test_errs(nfail, ntot)
 
 	json%error_numbers = .true.
 	call json%read_str('[.0]')
-	expect = "invalid integer part"
+	expect = "bad integer part"
 	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
 
 	call json%read_str('[0.]')
 	expect = "missing digits after decimal point"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	json%error_numbers = .false.
+	call json%read_str('[0.0.]')
+	expect = "bad floating-point number format"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('[123456789123456789123]')
+	expect = "bad integer number format"
 	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
 
 end subroutine test_errs

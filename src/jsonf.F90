@@ -392,9 +392,9 @@ function lex(lexer) result(token)
 			if (.not. is_valid) then
 				if (lexer%warn_numbers) then
 					! TODO: should warnings be pushed as a diagnostic? It would be nice to underline them in context like errors
-					write(*, "(a)") WARN_STR//"invalid number "//quote(text)//" ("//reason//")"
+					write(*, "(a)") WARN_STR//"bad number "//quote(text)//" ("//reason//")"
 				else if (lexer%error_numbers) then
-					call err_invalid_number(lexer, c0, text, reason)
+					call err_number(lexer, c0, text, reason)
 					token = new_token(BAD_TOKEN, l0, c0, text)
 					return
 				end if
@@ -408,7 +408,9 @@ function lex(lexer) result(token)
 				sca   = new_literal(F64_TYPE, f64 = f64)
 				token = new_token(F64_TOKEN, l0, c0, text, sca)
 			else
-				call panic("bad float number: "//text)
+				call err_float(lexer, c0, text)
+				token = new_token(BAD_TOKEN, l0, c0, text)
+				return
 			end if
 		else  ! i64
 			read(text_strip, *, iostat = io) i64
@@ -417,7 +419,9 @@ function lex(lexer) result(token)
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, l0, c0, text, sca)
 			else
-				call panic("bad integer number: "//text)
+				call err_integer(lexer, c0, text)
+				token = new_token(BAD_TOKEN, l0, c0, text)
+				return
 			end if
 		end if
 
@@ -568,7 +572,7 @@ logical function is_valid_json_number(str, reason) result(is_valid)
 
 	is_valid = is_all_digits(str(int_start:int_end))
 	if (.not. is_valid) then
-		if (present(reason)) reason = "invalid integer part"
+		if (present(reason)) reason = "bad integer part"
 		return
 	end if
 
@@ -584,7 +588,7 @@ logical function is_valid_json_number(str, reason) result(is_valid)
 
 		is_valid = frac_start-1 < int_end+1 .or. any(str(int_end+1: frac_start-1) == [".", "e", "E"])
 		if (.not. is_valid) then
-			if (present(reason)) reason = "invalid fractional part format"
+			if (present(reason)) reason = "bad fractional part format"
 			return
 		end if
 
@@ -599,7 +603,7 @@ logical function is_valid_json_number(str, reason) result(is_valid)
 
 		is_valid = is_all_digits(str(frac_start:frac_end))
 		if (.not. is_valid) then
-			if (present(reason)) reason = "invalid fractional part"
+			if (present(reason)) reason = "bad fractional part"
 			return
 		end if
 	end if
@@ -625,7 +629,7 @@ logical function is_valid_json_number(str, reason) result(is_valid)
 		! correctly
 		is_valid = is_all_digits(str(exp_start:exp_end))
 		if (.not. is_valid) then
-			if (present(reason)) reason = "invalid exponent part"
+			if (present(reason)) reason = "bad exponent part"
 			return
 		end if
 
@@ -1362,7 +1366,7 @@ subroutine err_arr_delim(lexer)
 
 end subroutine err_arr_delim
 
-subroutine err_invalid_number(lexer, start, number_text, reason)
+subroutine err_number(lexer, start, number_text, reason)
 	type(lexer_t), intent(inout) :: lexer
 	character(len=*), intent(in) :: number_text, reason
 	!********
@@ -1370,7 +1374,7 @@ subroutine err_invalid_number(lexer, start, number_text, reason)
 	integer :: start, length
 
 	descr = ERROR_STR // &
-		'invalid number format: ' // quote(number_text) // ' (' // reason // ')'
+		'bad number format: ' // number_text // ' (' // reason // ')'
 	!print *, "descr = ", descr
 
 	!!start   = lexer%current_token%col + 1
@@ -1378,12 +1382,50 @@ subroutine err_invalid_number(lexer, start, number_text, reason)
 	!print *, "start = ", start
 	length  = len(number_text)
 	context = underline(lexer, start, length)
-	summary = fg_bright_red//" invalid number"//color_reset
+	summary = fg_bright_red//" bad number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
 	!print *, "in err_inv*, lexer%is_ok = ", lexer%is_ok
 
-end subroutine err_invalid_number
+end subroutine err_number
+
+subroutine err_float(lexer, start, number_text)
+	type(lexer_t), intent(inout) :: lexer
+	character(len=*), intent(in) :: number_text
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: start, length
+
+	descr = ERROR_STR // &
+		'bad floating-point number format: ' // number_text
+	!print *, "descr = ", descr
+
+	length  = len(number_text)
+	context = underline(lexer, start, length)
+	summary = fg_bright_red//" bad float number"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_float
+
+subroutine err_integer(lexer, start, number_text)
+	type(lexer_t), intent(inout) :: lexer
+	character(len=*), intent(in) :: number_text
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: start, length
+
+	descr = ERROR_STR // &
+		'bad integer number format: ' // number_text
+	!print *, "descr = ", descr
+
+	length  = len(number_text)
+	context = underline(lexer, start, length)
+	summary = fg_bright_red//" bad integer number"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_integer
 
 subroutine err_obj_delim(lexer)
 	type(lexer_t), intent(inout) :: lexer

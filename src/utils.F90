@@ -434,7 +434,7 @@ end function i32_to_str
 function i64_to_str(int_) result(str)
 	integer(kind = 8), intent(in) :: int_
 	character(len = :), allocatable :: str
-	character :: buffer*16
+	character :: buffer*24
 	write(buffer, "(i0)") int_
 	str = trim(buffer)
 end function i64_to_str
