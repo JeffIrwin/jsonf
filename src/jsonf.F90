@@ -458,7 +458,7 @@ function lex(lexer) result(token)
 		if (lexer%stream%is_eof) then
 			! Unterminated string
 			token = new_token(BAD_TOKEN, l0, c0, text)
-			call panic("unterminated string literal")  ! TODO: diagnostics
+			call err_unterminated_str(lexer, l0, c0, text)
 			return
 		end if
 		call lexer%next_char()
@@ -508,12 +508,8 @@ function lex(lexer) result(token)
 		!print *, 'bad token text = ', quote(lexer%current_char)
 
 		token = new_token(BAD_TOKEN, l0, c0, lexer%current_char)
-		!! TODO: implement span_t and diagnostics
-		!span = new_span(lexer%pos, len(lexer%current_char))
-		!call lexer%diagnostics%push( &
-		!	err_unexpected_char(lexer%context, &
-		!	span, lexer%current_char))
-		call panic("unexpected character: "//quote(lexer%current_char))
+		call err_unexpected_char(lexer, c0)
+		return
 
 	end select
 
@@ -723,9 +719,18 @@ subroutine read_file_json(json, filename)
 	character(len=*), intent(in) :: filename
 	!********
 	type(stream_t) :: stream
+	integer :: io
 
 	! Stream chars one at a time
-	stream = new_file_stream(filename)
+	stream = new_file_stream(filename, io)
+	if (io /= EXIT_SUCCESS) then
+		call json%diagnostics%push(ERROR_STR//"can't open file "//quote(filename))
+		json%is_ok = .false.
+		if (json%print_errors_immediately) then
+			write(*, "(a)") ERROR_STR//"can't open file "//quote(filename)
+		end if
+		return
+	end if
 	call json%parse(stream)
 
 end subroutine read_file_json
@@ -779,12 +784,21 @@ subroutine parse_json(json, stream)
 	type(stream_t) :: stream
 	!********
 	type(lexer_t) :: lexer
+	integer :: i
+
+	! Reset error state for each fresh parse
+	json%is_ok = .true.
+	json%diagnostics = new_str_vec()
 
 	lexer = new_lexer(stream, json)
 	call parse_val(json, lexer, json%root)
-	json%is_ok = lexer%is_ok
+
+	! Append lexer diagnostics into json (json may already have e.g. duplicate key errors)
+	do i = 1, i32(lexer%diagnostics%len)
+		call json%diagnostics%push(lexer%diagnostics%vec(i)%str)
+	end do
+	json%is_ok = lexer%is_ok .and. json%is_ok
 	!print *, "json%is_ok = ", json%is_ok
-	json%diagnostics = lexer%diagnostics
 
 end subroutine parse_json
 
@@ -798,9 +812,7 @@ subroutine lexer_match(lexer, kind)
 	end if
 
 	! Syntran just advances to the next token on mismatch. Does that have an advantage?
-	call panic("expected token of kind "// &
-		kind_name(kind)//", but got "// &
-		kind_name(lexer%current_kind()))
+	call err_token_mismatch(lexer, kind)
 
 end subroutine lexer_match
 
@@ -1029,6 +1041,7 @@ subroutine parse_val(json, lexer, val)
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: val
 	!********
+	character(len=:), allocatable :: descr, context, summary
 	select case (lexer%current_kind())
 	case (STR_TOKEN)
 		!print *, "value (string) = ", lexer%current_token%sca%str
@@ -1066,11 +1079,11 @@ subroutine parse_val(json, lexer, val)
 	case (BAD_TOKEN)
 		! Do nothing
 	case default
-		!! TODO: this one should be an internal error -- it means I forgot to
-		!! fully implement a type somehow.  Still probably shouldn't abort
-		!print *, "kind = ", lexer%current_kind()
-		call panic("unexpected value type in object of kind " // &
-			kind_name(lexer%current_kind()))
+		! Unexpected token where a JSON value was expected
+		descr   = ERROR_STR//'unexpected token '//kind_name(lexer%current_kind())//' where value expected'
+		context = underline(lexer, lexer%current_token%col, max(len(lexer%current_token%text), 1))
+		summary = fg_bright_red//" unexpected token"//color_reset
+		call lexer%push_err(descr, context, summary)
 	end select
 	if (.not. lexer%is_ok) return
 
@@ -1078,7 +1091,7 @@ end subroutine parse_val
 
 function get_val_json(json, ptr) result(val)
 	! User-facing function
-	class(json_t), intent(in) :: json
+	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: ptr  ! RFC 6901 path string
 	type(json_val_t) :: val
 	!********
@@ -1087,12 +1100,13 @@ function get_val_json(json, ptr) result(val)
 	! could be done here.  See e.g. the cases with expected results 5 and 6
 	! ("/i\\j") in test_in9()
 
-	call get_val_core(json%root, ptr, 1, val)
+	call get_val_core(json, json%root, ptr, 1, val)
 
 end function get_val_json
 
-recursive subroutine get_val_core(val, ptr, i0, outval)
+recursive subroutine get_val_core(json, val, ptr, i0, outval)
 	! Private subroutine
+	type(json_t), intent(inout) :: json
 	type(json_val_t), intent(in) :: val
 	character(len=*), intent(in) :: ptr
 	integer, intent(in) :: i0  ! index of last '/' separator in ptr path string
@@ -1163,20 +1177,32 @@ recursive subroutine get_val_core(val, ptr, i0, outval)
 		idx = get_map_idx(val, key, found)
 		if (.not. found) then
 			closest = get_closest_key(val, key)
-			write(*, "(a)") ERROR_STR//"key "//quote(key_hi(key))//" not found"
-			write(*, "(a)") "Did you mean "//quote(key_hi(closest))//"?"
-			call panic("")
+			call json%diagnostics%push( &
+				ERROR_STR//"key "//quote(key_hi(key))//" not found"// &
+				LINE_FEED//"Did you mean "//quote(key_hi(closest))//"?")
+			json%is_ok = .false.
+			if (json%print_errors_immediately) then
+				write(*, "(a)") ERROR_STR//"key "//quote(key_hi(key))//" not found"
+				write(*, "(a)") "Did you mean "//quote(key_hi(closest))//"?"
+			end if
+			return
 		end if
-		call get_val_core(val%vals(idx), ptr, i, outval)
+		call get_val_core(json, val%vals(idx), ptr, i, outval)
 
 	case (ARR_TYPE)
 		idx = read_i32(key) ! TODO: iostat
 		!print *, "idx = ", idx
 		if (idx < 0 .or. idx >= val%narr) then
 			! TODO: print bounds, for consistency with printing closest key
-			call panic("index "//to_str(idx)//" out of bounds")
+			call json%diagnostics%push( &
+				ERROR_STR//"index "//to_str(idx)//" out of bounds")
+			json%is_ok = .false.
+			if (json%print_errors_immediately) then
+				write(*, "(a)") ERROR_STR//"index "//to_str(idx)//" out of bounds"
+			end if
+			return
 		end if
-		call get_val_core(val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
+		call get_val_core(json, val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
 
 	case default
 		call panic("bad type in get_val_json()")
@@ -1209,6 +1235,7 @@ subroutine parse_arr(json, lexer, arr)
 
 	if (DEBUG > 0) print *, "matching LBRACKET_TOKEN"
 	call lexer%match(LBRACKET_TOKEN)
+	if (.not. lexer%is_ok) return
 	arr%type = ARR_TYPE
 
 	! Initialize array storage
@@ -1260,13 +1287,15 @@ subroutine parse_arr(json, lexer, arr)
 
 	if (lexer%previous_token%kind == COMMA_TOKEN) then
 		if (json%error_trailing_commas) then
-			call panic("trailing comma in array")
+			call err_trailing_comma(lexer, "array")
+			return
 		end if
 		if (json%warn_trailing_commas) then
 			write(*, "(a)") WARN_STR//"trailing comma in array"
 		end if
 	end if
 	call lexer%match(RBRACKET_TOKEN)
+	if (.not. lexer%is_ok) return
 
 	if (DEBUG > 0) then
 		write(*,*) "Finished parse_arr(), narr = "//to_str(arr%narr)
@@ -1287,6 +1316,7 @@ subroutine parse_obj(json, lexer, obj)
 
 	if (DEBUG > 0) print *, "matching LBRACE_TOKEN"
 	call lexer%match(LBRACE_TOKEN)
+	if (.not. lexer%is_ok) return
 	obj%type = OBJ_TYPE
 
 	! Initialize hash map storage
@@ -1299,10 +1329,12 @@ subroutine parse_obj(json, lexer, obj)
 		if (lexer%current_kind() == RBRACE_TOKEN) exit
 
 		call lexer%match(STR_TOKEN)
+		if (.not. lexer%is_ok) return
 		key = lexer%previous_token%sca%str
 		!print *, "key = ", key
 
 		call lexer%match(COLON_TOKEN)
+		if (.not. lexer%is_ok) return
 		call parse_val(json, lexer, val)
 		if (.not. lexer%is_ok) return
 		!print *, "val = ", val%to_str()
@@ -1310,6 +1342,7 @@ subroutine parse_obj(json, lexer, obj)
 		if (.not. json%lint) then
 			! Store the key-value pair in the object
 			call set_map(json, obj, key, val)
+			if (.not. json%is_ok) return
 		end if
 
 		select case (lexer%current_kind())
@@ -1327,13 +1360,15 @@ subroutine parse_obj(json, lexer, obj)
 
 	if (lexer%previous_token%kind == COMMA_TOKEN) then
 		if (json%error_trailing_commas) then
-			call panic("trailing comma in object")
+			call err_trailing_comma(lexer, "object")
+			return
 		end if
 		if (json%warn_trailing_commas) then
 			write(*, "(a)") WARN_STR//"trailing comma in object"
 		end if
 	end if
 	call lexer%match(RBRACE_TOKEN)
+	if (.not. lexer%is_ok) return
 
 	! We might be able to deallocate obj%idx(:) here if no duplicate keys were
 	! found. However, memory savings aren't that much -- every key and val takes
@@ -1447,9 +1482,79 @@ subroutine err_obj_delim(lexer)
 
 end subroutine err_obj_delim
 
-function underline(lexer, start, length)
+subroutine err_unterminated_str(lexer, l0, c0, text)
+	! TODO: rename l0, c0
+	type(lexer_t), intent(inout) :: lexer
+	integer, intent(in) :: l0, c0
+	character(len=*), intent(in) :: text
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: length
+
+	! Pass l0 explicitly: current_token is the previous token when lex()
+	! is executing, and the string starts at line l0.
+	descr   = ERROR_STR//'unterminated string literal'
+	length  = max(len(text), 1)
+	context = underline(lexer, c0, length, l0)
+	summary = fg_bright_red//" unterminated string"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_unterminated_str
+
+subroutine err_unexpected_char(lexer, col)
+	type(lexer_t), intent(inout) :: lexer
+	integer, intent(in) :: col
+	!********
+	character(len=:), allocatable :: descr, summary, context
+
+	! Pass lexer%line explicitly: current_token still holds the *previous*
+	! token when lex() is executing, so its line field would be wrong.
+	descr   = ERROR_STR//'unexpected character: '//quote(lexer%current_char)
+	context = underline(lexer, col, 1, lexer%line)
+	summary = fg_bright_red//" unexpected character"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_unexpected_char
+
+subroutine err_token_mismatch(lexer, expected_kind)
+	type(lexer_t), intent(inout) :: lexer
+	integer, intent(in) :: expected_kind
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: length
+
+	descr  = ERROR_STR//'expected '//kind_name(expected_kind)// &
+		' but got '//kind_name(lexer%current_kind())
+	length  = max(len(lexer%current_token%text), 1)
+	context = underline(lexer, lexer%current_token%col, length)
+	summary = fg_bright_red//" unexpected token"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_token_mismatch
+
+subroutine err_trailing_comma(lexer, context_name)
+	type(lexer_t), intent(inout) :: lexer
+	character(len=*), intent(in) :: context_name
+	!********
+	character(len=:), allocatable :: descr, summary, context
+	integer :: length
+
+	descr   = ERROR_STR//'trailing comma in '//context_name
+	length  = max(len(lexer%current_token%text), 1)
+	context = underline(lexer, lexer%current_token%col, length)
+	summary = fg_bright_red//" trailing comma"//color_reset
+
+	call lexer%push_err(descr, context, summary)
+
+end subroutine err_trailing_comma
+
+function underline(lexer, start, length, line_)
 	type(lexer_t) :: lexer
 	integer, intent(in) :: start, length
+	integer, intent(in), optional :: line_  ! override lexer%current_token%line
 	character(len=:), allocatable :: underline
 	!********
 	character(len = :), allocatable :: line_num, spaces, fg1, rst, text
@@ -1476,7 +1581,11 @@ function underline(lexer, start, length)
 
 	fg1 = fg_bright_cyan
 	rst = color_reset
-	line_num = to_str(lexer%current_token%line)
+	if (present(line_)) then
+		line_num = to_str(line_)
+	else
+		line_num = to_str(lexer%current_token%line)
+	end if
 	text = tabs_to_spaces(lexer%line_str%trim())
 
 	! Pad spaces the same length as the line number string
@@ -1593,6 +1702,7 @@ subroutine set_map(json, obj, key, val)
 		do ii = 1, old_nkeys
 			i = old_idx(ii)
 			call set_map_core(json, obj, old_keys(i)%str, old_vals(i))
+			if (.not. json%is_ok) return
 		end do
 
 		deallocate(old_idx)
@@ -1634,7 +1744,12 @@ subroutine set_map_core(json, obj, key, val)
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
 			if (json%error_duplicate_keys) then
-				call panic("duplicate key "//quote(key))
+				call json%diagnostics%push(ERROR_STR//"duplicate key "//quote(key))
+				json%is_ok = .false.
+				if (json%print_errors_immediately) then
+					write(*, "(a)") ERROR_STR//"duplicate key "//quote(key)
+				end if
+				return
 			end if
 			if (.not. json%first_duplicate) then
 				call move_val(val, obj%vals(idx))
@@ -1709,8 +1824,9 @@ recursive subroutine copy_val(dst, src)
 
 end subroutine copy_val
 
-function new_file_stream(filename) result(stream)
+function new_file_stream(filename, io_status) result(stream)
 	character(len=*), intent(in) :: filename
+	integer, intent(out), optional :: io_status
 	type(stream_t) :: stream
 	!********
 	integer :: io
@@ -1718,7 +1834,11 @@ function new_file_stream(filename) result(stream)
 	stream%src_file = filename
 	open(file = filename, newunit = stream%unit, action = "read", access = "stream", iostat = io)
 	!print *, "opened stream unit "//to_str(stream%unit)
-	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
+	if (present(io_status)) then
+		io_status = io
+	else if (io /= EXIT_SUCCESS) then
+		call panic("can't open file "//quote(filename))
+	end if
 end function new_file_stream
 
 function new_str_stream(str) result(stream)
@@ -1733,7 +1853,12 @@ end function new_str_stream
 
 subroutine print_file_tokens(filename)
 	character(len=*), intent(in) :: filename
-	call print_stream_tokens(new_file_stream(filename))
+	!********
+	type(stream_t) :: stream
+	integer :: io
+	stream = new_file_stream(filename, io)
+	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
+	call print_stream_tokens(stream)
 end subroutine print_file_tokens
 
 subroutine print_str_tokens(str)

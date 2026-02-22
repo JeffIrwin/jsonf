@@ -62,7 +62,10 @@ subroutine app_echo_file(args)
 		!print *, "len(pointer) = ", len(args%pointer)
 
 		val = json%get_val(args%pointer)
-		!call copy_val(val, json%get_val(args%pointer))
+		if (.not. json%is_ok) then
+			call json%print_errors()
+			call panic("")
+		end if
 
 		!print *, "val = "//val%to_str()
 		!print *, "done get_val()"
@@ -108,7 +111,10 @@ subroutine app_echo_str(args)
 		!print *, "len(pointer) = ", len(args%pointer)
 
 		val = json%get_val(args%pointer)
-		!call copy_val(val, json%get_val(args%pointer))
+		if (.not. json%is_ok) then
+			call json%print_errors()
+			call panic("")
+		end if
 
 		!print *, "val = "//val%to_str()
 		!print *, "done get_val()"
