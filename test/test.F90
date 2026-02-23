@@ -1184,6 +1184,7 @@ subroutine test_errs(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
 	type(json_t) :: json
+	type(json_val_t) :: jval
 	character(len=:), allocatable :: expect, place, under
 
 	json%print_errors_immediately = .false.
@@ -1230,7 +1231,54 @@ subroutine test_errs(nfail, ntot)
 	expect = "bad integer number format"
 	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
 
-	! TODO: add tests on the line/column reporting and unerline span for every message
+	call json%read_str('{"a": "hello}')
+	expect = "unterminated string literal"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('@')
+	expect = "unexpected character"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('{1: 2}')
+	expect = "but got"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	json%error_trailing_commas = .true.
+	call json%read_str('[1, 2,]')
+	expect = "trailing comma in array"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('{"a": 1,}')
+	expect = "trailing comma in object"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	json%error_trailing_commas = .false.
+
+	json%error_duplicate_keys = .true.
+	call json%read_str('{"a": 1, "a": 2}')
+	expect = "duplicate key"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	json%error_duplicate_keys = .false.
+
+	call json%read_str('{"a": 1}')
+	jval = json%get_val("/b")
+	expect = "not found"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	expect = "Did you mean"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('[1, 2]')
+	jval = json%get_val("/5")
+	expect = "out of bounds"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('{}')  ! reset diagnostics with a clean parse
+	call json%read_file("nonexistent_file.json")
+	expect = "can't open file"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('[:]')
+	expect = "where value expected"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
 
 end subroutine test_errs
 
