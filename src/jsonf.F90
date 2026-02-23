@@ -44,6 +44,10 @@ module jsonf
 	! - add other stream types
 	!   * stdin
 	!   * network? probably not
+	!   * is streaming worthwhile or does it actually hurt performance? there's
+	!     actually a "lines" str vec of all lines to help with diagnostics, so
+	!     we're saving the whole file in memory now anyway. maybe there's a
+	!     simpler approach
 	! - ci/cd
 	!   * test on windows, linux (macos?)
 	!   * test with different fortran compilers
@@ -1312,8 +1316,9 @@ subroutine parse_obj(json, lexer, obj)
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: obj
 	!********
-	character(len=:), allocatable :: key
+	character(len=:), allocatable :: key, descr, context, summary
 	integer, parameter :: INIT_SIZE = 2
+	integer :: key_line, key_col, key_len
 	type(json_val_t) :: val
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
@@ -1334,7 +1339,10 @@ subroutine parse_obj(json, lexer, obj)
 
 		call lexer%match(STR_TOKEN)
 		if (.not. lexer%is_ok) return
-		key = lexer%previous_token%sca%str
+		key      = lexer%previous_token%sca%str
+		key_line = lexer%previous_token%line
+		key_col  = lexer%previous_token%col
+		key_len  = len(lexer%previous_token%text)
 		!print *, "key = ", key
 
 		call lexer%match(COLON_TOKEN)
@@ -1346,7 +1354,13 @@ subroutine parse_obj(json, lexer, obj)
 		if (.not. json%lint) then
 			! Store the key-value pair in the object
 			call set_map(json, obj, key, val)
-			if (.not. json%is_ok) return
+			if (.not. json%is_ok) then
+				descr   = ERROR_STR // 'duplicate key ' // quote(key)
+				context = underline(lexer, key_col, key_len, key_line)
+				summary = fg_bright_red // ' duplicate key' // color_reset
+				call lexer%push_err(descr, context, summary)
+				return
+			end if
 		end if
 
 		select case (lexer%current_kind())
@@ -1756,11 +1770,7 @@ subroutine set_map_core(json, obj, key, val)
 		else if (is_str_eq(obj%keys(idx)%str, key)) then
 			! Key already exists, update value
 			if (json%error_duplicate_keys) then
-				call json%diagnostics%push(ERROR_STR//"duplicate key "//quote(key))
 				json%is_ok = .false.
-				if (json%print_errors_immediately) then
-					write(*, "(a)") ERROR_STR//"duplicate key "//quote(key)
-				end if
 				return
 			end if
 			if (.not. json%first_duplicate) then
