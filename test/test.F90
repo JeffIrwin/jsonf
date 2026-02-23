@@ -1300,7 +1300,11 @@ subroutine test_errs(nfail, ntot)
 	json%error_duplicate_keys = .true.
 	call json%read_str('{"a": 1, "a": 2}')
 	expect = "duplicate key"
-	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	place  = "<STR_STREAM>:1:10"
+	under  = "1m^^^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
 	json%error_duplicate_keys = .false.
 
 	call json%read_str('{"a": 1}')
@@ -1334,7 +1338,7 @@ subroutine test_file_errs(nfail, ntot)
 	integer, intent(inout) :: nfail, ntot
 	!********
 	type(json_t) :: json
-	character(len=:), allocatable :: expect, place
+	character(len=:), allocatable :: expect, place, under
 
 	json%print_errors_immediately = .false.
 
@@ -1367,7 +1371,11 @@ subroutine test_file_errs(nfail, ntot)
 	json%error_duplicate_keys = .true.
 	call json%read_file("data/errs/duplicate_key.json")
 	expect = "duplicate key"
+	place  = "data/errs/duplicate_key.json:3:5"
+	under  = "1m^^^"//ESC
 	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "file under: "//expect, nfail, ntot)
 	json%error_duplicate_keys = .false.
 
 end subroutine test_file_errs
