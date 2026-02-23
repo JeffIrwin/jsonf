@@ -1282,7 +1282,7 @@ subroutine test_errs(nfail, ntot)
 	json%error_trailing_commas = .true.
 	call json%read_str('[1, 2,]')
 	expect = "trailing comma in array"
-	place  = "<STR_STREAM>:1:7"
+	place  = "<STR_STREAM>:1:6"  ! points at the comma, not the closing bracket
 	under  = "1m^"//ESC
 	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
 	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
@@ -1290,7 +1290,7 @@ subroutine test_errs(nfail, ntot)
 
 	call json%read_str('{"a": 1,}')
 	expect = "trailing comma in object"
-	place  = "<STR_STREAM>:1:9"
+	place  = "<STR_STREAM>:1:8"  ! points at the comma, not the closing brace
 	under  = "1m^"//ESC
 	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
 	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
@@ -1359,7 +1359,7 @@ subroutine test_file_errs(nfail, ntot)
 	json%error_trailing_commas = .true.
 	call json%read_file("data/errs/trailing_comma.json")
 	expect = "trailing comma in array"
-	place  = "data/errs/trailing_comma.json:4:1"
+	place  = "data/errs/trailing_comma.json:3:6"  ! points at the comma
 	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
 	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
 	json%error_trailing_commas = .false.

@@ -184,6 +184,7 @@ module jsonf
 		integer             :: line, col
 		logical             :: is_ok = .true.  ! error state
 		type(str_vec_t)     :: diagnostics
+		type(str_vec_t)     :: lines
 		type(str_builder_t) :: line_str
 		type(stream_t)      :: stream
 
@@ -252,6 +253,7 @@ subroutine lexer_next_char(lexer)
 	lexer%current_char =  lexer%stream%get()
 	if (lexer%current_char == LINE_FEED) then
 		! The line feed is column 0, and the first char after the line feed is column 1
+		call lexer%lines%push(lexer%line_str%trim())  ! save completed line
 		lexer%line = lexer%line + 1
 		lexer%col = 0
 		lexer%line_str = new_str_builder()
@@ -321,7 +323,7 @@ function lex(lexer) result(token)
 	class(lexer_t) :: lexer
 	type(token_t) :: token
 	!********
-	character(len=:), allocatable :: text, text_strip, reason, line_text0
+	character(len=:), allocatable :: text, text_strip, reason
 	integer :: io, l0, c0
 	integer(kind=8) :: start, end_, i64
 	logical :: float_, is_valid
@@ -436,10 +438,6 @@ function lex(lexer) result(token)
 		call lexer%next_char()  ! skip opening quote
 		start = lexer%pos
 
-		! Capture current line before the loop; by the time an unterminated
-		! string is detected at EOF, line_str has been reset to a later line.
-		line_text0 = lexer%line_str%trim()
-
 		do
 			!print *, "lexer current = ", lexer%current_char
 
@@ -455,11 +453,6 @@ function lex(lexer) result(token)
 				exit
 			end if
 
-			! Keep updating line_text0 while on the starting line; once next_char()
-			! crosses a newline, line changes and we stop, leaving line_text0 as the
-			! full content of the line that contained the opening quote.
-			if (lexer%line == l0) line_text0 = lexer%line_str%trim()
-
 			call lexer%next_char()
 		end do
 		text = sb%trim()
@@ -467,7 +460,7 @@ function lex(lexer) result(token)
 		if (lexer%stream%is_eof) then
 			! Unterminated string
 			token = new_token(BAD_TOKEN, l0, c0, text)
-			call err_unterminated_str(lexer, l0, c0, text, line_text0)
+			call err_unterminated_str(lexer, l0, c0, text)
 			return
 		end if
 		call lexer%next_char()
@@ -703,16 +696,18 @@ function new_lexer(stream, json) result(lexer)
 	lexer%line = 1
 	lexer%pos = 1
 	lexer%diagnostics = new_str_vec()
+	lexer%lines = new_str_vec()
 	lexer%stream = stream
 
 	! Get the first char and token on construction instead of checking later if
 	! we have them. Column starts initially at 1
+	lexer%line_str = new_str_builder()
 	lexer%current_char = lexer%stream%get()
 	lexer%col = 1
 	if (lexer%current_char == LINE_FEED) then
+		call lexer%lines%push('')  ! push empty line for the newline
 		lexer%line = lexer%line + 1
 	else
-		lexer%line_str = new_str_builder()
 		call lexer%line_str%push(lexer%current_char)
 	end if
 
@@ -1491,12 +1486,11 @@ subroutine err_obj_delim(lexer)
 
 end subroutine err_obj_delim
 
-subroutine err_unterminated_str(lexer, l0, c0, text, line_text)
+subroutine err_unterminated_str(lexer, l0, c0, text)
 	! TODO: rename l0, c0
 	type(lexer_t), intent(inout) :: lexer
 	integer, intent(in) :: l0, c0
 	character(len=*), intent(in) :: text
-	character(len=*), intent(in), optional :: line_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
 	integer :: length
@@ -1505,7 +1499,7 @@ subroutine err_unterminated_str(lexer, l0, c0, text, line_text)
 	! is executing, and the string starts at line l0.
 	descr   = ERROR_STR//'unterminated string literal'
 	length  = max(len(text), 1)
-	context = underline(lexer, c0, length, l0, line_text)
+	context = underline(lexer, c0, length, l0)
 	summary = fg_bright_red//" unterminated string"//color_reset
 
 	call lexer%push_err(descr, context, summary)
@@ -1553,22 +1547,22 @@ subroutine err_trailing_comma(lexer, context_name)
 	integer :: length
 
 	descr   = ERROR_STR//'trailing comma in '//context_name
-	length  = max(len(lexer%current_token%text), 1)
-	context = underline(lexer, lexer%current_token%col, length)
+	length  = max(len(lexer%previous_token%text), 1)
+	context = underline(lexer, lexer%previous_token%col, length, lexer%previous_token%line)
 	summary = fg_bright_red//" trailing comma"//color_reset
 
 	call lexer%push_err(descr, context, summary)
 
 end subroutine err_trailing_comma
 
-function underline(lexer, start, length, line_, line_text)
+function underline(lexer, start, length, line_)
 	type(lexer_t) :: lexer
 	integer, intent(in) :: start, length
 	integer, intent(in), optional :: line_  ! override lexer%current_token%line
-	character(len=*), intent(in), optional :: line_text  ! override lexer%line_str
 	character(len=:), allocatable :: underline
 	!********
 	character(len = :), allocatable :: line_num, spaces, fg1, rst, text
+	integer :: line_idx
 
 	! Here's an example of a rust error message, from which I'm stealing UX:
 	!
@@ -1588,18 +1582,21 @@ function underline(lexer, start, length, line_, line_text)
 	!
 	! """
 
-	call lexer%finish_line()
-
 	fg1 = fg_bright_cyan
 	rst = color_reset
 	if (present(line_)) then
 		line_num = to_str(line_)
+		line_idx = line_
 	else
 		line_num = to_str(lexer%current_token%line)
+		line_idx = lexer%current_token%line
 	end if
-	if (present(line_text)) then
-		text = tabs_to_spaces(line_text)
+
+	! Look up the stored line if available; otherwise fall back to current line_str
+	if (line_idx <= lexer%lines%len) then
+		text = tabs_to_spaces(lexer%lines%vec(line_idx)%str)
 	else
+		call lexer%finish_line()
 		text = tabs_to_spaces(lexer%line_str%trim())
 	end if
 
