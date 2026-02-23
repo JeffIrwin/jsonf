@@ -10,8 +10,8 @@ fpm test                         # run all tests
 fpm test --flag "-Wno-tabs"      # run tests suppressing tab warnings (used in test.sh)
 fpm run -- FILE.json             # run on a json file
 fpm run -- -s '{\"a\": 1}'      # run on a string (quotes must be escaped inside fpm)
-fpm install --prefix . --profile debug  # install to ./bin/jsonf for direct invocation
-./bin/jsonf -s '{"a": 1}'       # run the installed binary directly
+fpm install --prefix build --profile debug  # install to ./build/bin/jsonf for direct invocation
+./build/bin/jsonf -s '{"a": 1}'            # run the installed binary directly
 ```
 
 Note: When passing JSON strings via `fpm run --`, quotes inside the string must be escaped as `\"`. When running `./bin/jsonf` directly, normal quoting works.
