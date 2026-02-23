@@ -321,7 +321,7 @@ function lex(lexer) result(token)
 	class(lexer_t) :: lexer
 	type(token_t) :: token
 	!********
-	character(len=:), allocatable :: text, text_strip, reason
+	character(len=:), allocatable :: text, text_strip, reason, line_text0
 	integer :: io, l0, c0
 	integer(kind=8) :: start, end_, i64
 	logical :: float_, is_valid
@@ -436,6 +436,10 @@ function lex(lexer) result(token)
 		call lexer%next_char()  ! skip opening quote
 		start = lexer%pos
 
+		! Capture current line before the loop; by the time an unterminated
+		! string is detected at EOF, line_str has been reset to a later line.
+		line_text0 = lexer%line_str%trim()
+
 		do
 			!print *, "lexer current = ", lexer%current_char
 
@@ -451,6 +455,11 @@ function lex(lexer) result(token)
 				exit
 			end if
 
+			! Keep updating line_text0 while on the starting line; once next_char()
+			! crosses a newline, line changes and we stop, leaving line_text0 as the
+			! full content of the line that contained the opening quote.
+			if (lexer%line == l0) line_text0 = lexer%line_str%trim()
+
 			call lexer%next_char()
 		end do
 		text = sb%trim()
@@ -458,7 +467,7 @@ function lex(lexer) result(token)
 		if (lexer%stream%is_eof) then
 			! Unterminated string
 			token = new_token(BAD_TOKEN, l0, c0, text)
-			call err_unterminated_str(lexer, l0, c0, text)
+			call err_unterminated_str(lexer, l0, c0, text, line_text0)
 			return
 		end if
 		call lexer%next_char()
@@ -1482,11 +1491,12 @@ subroutine err_obj_delim(lexer)
 
 end subroutine err_obj_delim
 
-subroutine err_unterminated_str(lexer, l0, c0, text)
+subroutine err_unterminated_str(lexer, l0, c0, text, line_text)
 	! TODO: rename l0, c0
 	type(lexer_t), intent(inout) :: lexer
 	integer, intent(in) :: l0, c0
 	character(len=*), intent(in) :: text
+	character(len=*), intent(in), optional :: line_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
 	integer :: length
@@ -1495,7 +1505,7 @@ subroutine err_unterminated_str(lexer, l0, c0, text)
 	! is executing, and the string starts at line l0.
 	descr   = ERROR_STR//'unterminated string literal'
 	length  = max(len(text), 1)
-	context = underline(lexer, c0, length, l0)
+	context = underline(lexer, c0, length, l0, line_text)
 	summary = fg_bright_red//" unterminated string"//color_reset
 
 	call lexer%push_err(descr, context, summary)
@@ -1551,10 +1561,11 @@ subroutine err_trailing_comma(lexer, context_name)
 
 end subroutine err_trailing_comma
 
-function underline(lexer, start, length, line_)
+function underline(lexer, start, length, line_, line_text)
 	type(lexer_t) :: lexer
 	integer, intent(in) :: start, length
 	integer, intent(in), optional :: line_  ! override lexer%current_token%line
+	character(len=*), intent(in), optional :: line_text  ! override lexer%line_str
 	character(len=:), allocatable :: underline
 	!********
 	character(len = :), allocatable :: line_num, spaces, fg1, rst, text
@@ -1586,7 +1597,11 @@ function underline(lexer, start, length, line_)
 	else
 		line_num = to_str(lexer%current_token%line)
 	end if
-	text = tabs_to_spaces(lexer%line_str%trim())
+	if (present(line_text)) then
+		text = tabs_to_spaces(line_text)
+	else
+		text = tabs_to_spaces(lexer%line_str%trim())
+	end if
 
 	! Pad spaces the same length as the line number string
 	spaces = repeat(' ', len(line_num) + 2)
