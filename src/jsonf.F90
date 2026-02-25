@@ -176,7 +176,6 @@ module jsonf
 
 	type token_t
 		integer :: kind
-		integer(kind=8) :: pos  ! TODO: unused?
 		integer :: line, col
 		character(len=:), allocatable :: text
 		type(sca_t) :: sca
@@ -184,7 +183,6 @@ module jsonf
 
 	type lexer_t
 		!character(len=:), allocatable :: src_file  ! already part of stream_t encapsed in lexer
-		integer(kind=8)     :: pos  ! TODO: unused?
 		integer             :: line, col
 		logical             :: is_ok = .true.  ! error state
 		type(str_vec_t)     :: diagnostics
@@ -329,17 +327,12 @@ function lex(lexer) result(token)
 	!********
 	character(len=:), allocatable :: text, text_strip, reason
 	integer :: io, l0, c0
-	integer(kind=8) :: start, end_, i64
+	integer(kind=8) :: i64
 	logical :: float_, is_valid
 	real(kind=8) :: f64
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
 
-	if (DEBUG > 2) then
-		write(*,*) "lex: pos = "//to_str(lexer%pos)
-	end if
-
-	start = lexer%pos  ! TODO: unused?
 	l0 = lexer%line
 	c0 = lexer%col
 	if (lexer%stream%is_eof) then
@@ -385,8 +378,7 @@ function lex(lexer) result(token)
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
-		end_ = lexer%pos
-
+	
 		text = sb%trim()
 		text_strip = rm_char(text, "_")
 		!print *, "text = ", text
@@ -440,7 +432,6 @@ function lex(lexer) result(token)
 		sb = new_str_builder()
 		call sb%push(lexer%current_char)
 		call lexer%next_char()  ! skip opening quote
-		start = lexer%pos
 
 		do
 			!print *, "lexer current = ", lexer%current_char
@@ -667,17 +658,14 @@ function new_keyword_token(line, col, text) result(token)
 
 end function new_keyword_token
 
-!function new_token(kind, pos, text, sca) result(token)
 function new_token(kind, line, col, text, sca) result(token)
 	integer, intent(in) :: kind
 	integer, intent(in) :: line, col
-	!integer(kind=8), intent(in) :: pos
 	character(len=*), intent(in) :: text
 	type(sca_t), intent(in), optional :: sca
 	type(token_t) :: token
 
 	token%kind = kind
-	!token%pos  = pos
 	token%line = line
 	token%col  = col
 	token%text = text
@@ -698,7 +686,6 @@ function new_lexer(stream, json) result(lexer)
 	end if
 
 	lexer%line = 1
-	lexer%pos = 1
 	lexer%diagnostics = new_str_vec()
 	lexer%lines = new_str_vec()
 	lexer%stream = stream
@@ -1120,7 +1107,7 @@ recursive subroutine get_val_core(json, val, ptr, i0, outval)
 	integer, intent(in) :: i0  ! index of last '/' separator in ptr path string
 	type(json_val_t) :: outval
 	!********
-	character(len=:), allocatable :: key, closest
+	character(len=:), allocatable :: key, closest, err
 	integer :: i, j, k
 	integer(kind=4) :: idx
 	logical :: found
@@ -1185,14 +1172,11 @@ recursive subroutine get_val_core(json, val, ptr, i0, outval)
 		idx = get_map_idx(val, key, found)
 		if (.not. found) then
 			closest = get_closest_key(val, key)
-			call json%diagnostics%push( &
-				ERROR_STR//"key "//quote(key_hi(key))//" not found"// &
-				LINE_FEED//"Did you mean "//quote(key_hi(closest))//"?")
+			err = ERROR_STR//"key "//quote(key_hi(key))//" not found"// &
+				LINE_FEED//"Did you mean "//quote(key_hi(closest))//"?"
+			call json%diagnostics%push(err)
 			json%is_ok = .false.
-			if (json%print_errors_immediately) then
-				write(*, "(a)") ERROR_STR//"key "//quote(key_hi(key))//" not found"
-				write(*, "(a)") "Did you mean "//quote(key_hi(closest))//"?"
-			end if
+			if (json%print_errors_immediately) write(*, "(a)") err
 			return
 		end if
 		call get_val_core(json, val%vals(idx), ptr, i, outval)
@@ -1202,12 +1186,10 @@ recursive subroutine get_val_core(json, val, ptr, i0, outval)
 		!print *, "idx = ", idx
 		if (idx < 0 .or. idx >= val%narr) then
 			! TODO: print bounds, for consistency with printing closest key
-			call json%diagnostics%push( &
-				ERROR_STR//"index "//to_str(idx)//" out of bounds")
+			err = ERROR_STR//"index "//to_str(idx)//" out of bounds"
+			call json%diagnostics%push(err)
 			json%is_ok = .false.
-			if (json%print_errors_immediately) then
-				write(*, "(a)") ERROR_STR//"index "//to_str(idx)//" out of bounds"
-			end if
+			if (json%print_errors_immediately) write(*, "(a)") err
 			return
 		end if
 		call get_val_core(json, val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
@@ -1408,7 +1390,7 @@ subroutine err_arr_delim(lexer)
 	integer :: start, length
 
 	descr = ERROR_STR // &
-		'missing "," or "]" while while parsing array before ' // &
+		'missing "," or "]" while parsing array before ' // &
 		lexer%current_token%text
 
 	start   = lexer%current_token%col
@@ -1488,7 +1470,7 @@ subroutine err_obj_delim(lexer)
 	integer :: start, length
 
 	descr = ERROR_STR // &
-		'missing "," or "}" while while parsing object before ' // &
+		'missing "," or "}" while parsing object before ' // &
 		lexer%current_token%text
 
 	start   = lexer%current_token%col

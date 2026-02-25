@@ -935,7 +935,7 @@ function unquote(str)
 		return
 	end if
 	unquote = str
-end function
+end function unquote
 
 !===============================================================================
 
