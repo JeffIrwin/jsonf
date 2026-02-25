@@ -28,7 +28,7 @@ fpm run -- --help
 If the binary is in your path, you can simply run `jsonf --help`.  Here are some
 of the current options
 ```
-jsonf 0.2.0
+jsonf 0.3.0
  Usage:
      jsonf -h | --help
      jsonf FILE.json [(-p|--pointer) POINTER]

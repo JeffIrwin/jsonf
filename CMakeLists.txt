@@ -2,7 +2,7 @@
 # Project hash: 3A6C14B2C2D4E5F4
 
 cmake_minimum_required(VERSION 3.12)
-project(jsonf VERSION 0.2.0 LANGUAGES Fortran)
+project(jsonf VERSION 0.3.0 LANGUAGES Fortran)
 
 # Library
 add_library(jsonf_lib
