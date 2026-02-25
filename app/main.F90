@@ -21,7 +21,7 @@ subroutine args_to_json_config(args, json)
 
 	json%error_numbers = args%error_numbers
 	json%warn_numbers  = args%warn_numbers
-	!print *, "json%error_numbers = ", json%error_numbers
+	json%print_errors_immediately = .false.  ! this app prints them itself
 
 	json%lint = args%lint
 
@@ -51,6 +51,10 @@ subroutine app_echo_file(args)
 	end if
 
 	call json%read_file(args%filename)
+	if (.not. json%is_ok) then
+		call json%print_errors()
+		call panic("")
+	end if
 	if (args%lint) return
 
 	if (args%has_pointer) then
@@ -58,7 +62,10 @@ subroutine app_echo_file(args)
 		!print *, "len(pointer) = ", len(args%pointer)
 
 		val = json%get_val(args%pointer)
-		!call copy_val(val, json%get_val(args%pointer))
+		if (.not. json%is_ok) then
+			call json%print_errors()
+			call panic("")
+		end if
 
 		!print *, "val = "//val%to_str()
 		!print *, "done get_val()"
@@ -93,6 +100,10 @@ subroutine app_echo_str(args)
 	end if
 
 	call json%read_str(args%str)
+	if (.not. json%is_ok) then
+		call json%print_errors()
+		call panic("")
+	end if
 	if (args%lint) return
 
 	if (args%has_pointer) then
@@ -100,7 +111,10 @@ subroutine app_echo_str(args)
 		!print *, "len(pointer) = ", len(args%pointer)
 
 		val = json%get_val(args%pointer)
-		!call copy_val(val, json%get_val(args%pointer))
+		if (.not. json%is_ok) then
+			call json%print_errors()
+			call panic("")
+		end if
 
 		!print *, "val = "//val%to_str()
 		!print *, "done get_val()"

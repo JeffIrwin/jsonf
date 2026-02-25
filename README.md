@@ -84,7 +84,7 @@ jsonf -s '{"foo": 3, "baz": [0, 10, 20, 30]}' -p '/baz/3'
 # 30
 ```
 
-### Spellcheck
+### Spell check
 
 If a key doesn't exist, the closest match is suggested:
 ```bash

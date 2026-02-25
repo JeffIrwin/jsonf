@@ -1180,6 +1180,213 @@ subroutine test_num_jsons(nfail, ntot)
 
 end subroutine test_num_jsons
 
+subroutine test_errs(nfail, ntot)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	type(json_t) :: json
+	type(json_val_t) :: jval
+	character(len=:), allocatable :: expect, place, under
+
+	json%print_errors_immediately = .false.
+
+	call json%read_str('{"a": 1  "b": 2}')
+	expect = "missing comma or right-brace"  ! validate error message
+	place  = "<STR_STREAM>:1:10"             ! validate line/column number reporting
+	under  = "1m^^^"//ESC                    ! validate length of underline
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str(LINE_FEED//LINE_FEED//'{"a": 1, "b": 2')
+	expect = "missing comma or right-brace"
+	place  = "<STR_STREAM>:3:16"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('[0 2]')
+	expect = "missing comma or right-bracket"
+	place  = "<STR_STREAM>:1:4"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('[0, 2')
+	expect = "missing comma or right-bracket"
+	place  = "<STR_STREAM>:1:6"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	json%error_numbers = .true.
+	call json%read_str('[.0]')
+	expect = "bad integer part"
+	place  = "<STR_STREAM>:1:2"
+	under  = "1m^^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('[0.]')
+	expect = "missing digits after decimal point"
+	place  = "<STR_STREAM>:1:2"
+	under  = "1m^^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	json%error_numbers = .false.
+	call json%read_str('[0.0.]')
+	expect = "bad floating-point number format"
+	place  = "<STR_STREAM>:1:2"
+	under  = "1m^^^^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('[123456789123456789123]')
+	expect = "bad integer number format"
+	place  = "<STR_STREAM>:1:2"
+	under  = "1m"//repeat("^", 21)//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('{"a": "hello}')
+	expect = "unterminated string literal"
+	place  = "<STR_STREAM>:1:7"
+	under  = "1m^^^^^^^^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('@')
+	expect = "unexpected character"
+	place  = "<STR_STREAM>:1:1"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('{1: 2}')
+	expect = "but got"
+	place  = "<STR_STREAM>:1:2"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	json%error_trailing_commas = .true.
+	call json%read_str('[1, 2,]')
+	expect = "trailing comma in array"
+	place  = "<STR_STREAM>:1:6"  ! points at the comma, not the closing bracket
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+	call json%read_str('{"a": 1,}')
+	expect = "trailing comma in object"
+	place  = "<STR_STREAM>:1:8"  ! points at the comma, not the closing brace
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+	json%error_trailing_commas = .false.
+
+	json%error_duplicate_keys = .true.
+	call json%read_str('{"a": 1, "a": 2}')
+	expect = "duplicate key"
+	place  = "<STR_STREAM>:1:10"
+	under  = "1m^^^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+	json%error_duplicate_keys = .false.
+
+	call json%read_str('{"a": 1}')
+	jval = json%get_val("/b")
+	expect = "not found"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+	expect = "Did you mean"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('[1, 2]')
+	jval = json%get_val("/5")
+	expect = "out of bounds"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('{}')  ! reset diagnostics with a clean parse
+	call json%read_file("nonexistent_file.json")
+	expect = "can't open file"
+	TEST(err_matches(json, expect), "diag: "//expect, nfail, ntot)
+
+	call json%read_str('[:]')
+	expect = "where value expected"
+	place  = "<STR_STREAM>:1:2"
+	under  = "1m^"//ESC
+	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+
+end subroutine test_errs
+
+subroutine test_file_errs(nfail, ntot)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	type(json_t) :: json
+	character(len=:), allocatable :: expect, place, under
+
+	json%print_errors_immediately = .false.
+
+	call json%read_file("data/errs/missing_comma.json")
+	expect = "missing comma or right-brace"
+	place  = "data/errs/missing_comma.json:3:5"
+	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
+
+	call json%read_file("data/errs/unterminated_str.json")
+	expect = "unterminated string literal"
+	place  = "data/errs/unterminated_str.json:2:10"
+	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
+
+	call json%read_file("data/errs/unexpected_char.json")
+	expect = "unexpected character"
+	place  = "data/errs/unexpected_char.json:3:5"
+	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
+
+	json%error_trailing_commas = .true.
+	call json%read_file("data/errs/trailing_comma.json")
+	expect = "trailing comma in array"
+	place  = "data/errs/trailing_comma.json:3:6"  ! points at the comma
+	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
+	json%error_trailing_commas = .false.
+
+	json%error_duplicate_keys = .true.
+	call json%read_file("data/errs/duplicate_key.json")
+	expect = "duplicate key"
+	place  = "data/errs/duplicate_key.json:3:5"
+	under  = "1m^^^"//ESC
+	TEST(err_matches(json, expect), "file diag : "//expect, nfail, ntot)
+	TEST(err_matches(json, place ), "file place: "//expect, nfail, ntot)
+	TEST(err_matches(json, under ), "file under: "//expect, nfail, ntot)
+	json%error_duplicate_keys = .false.
+
+end subroutine test_file_errs
+
+logical function err_matches(json, msg)
+	! Check if a json's first error message matches a given msg string
+	type(json_t), intent(in) :: json
+	character(len=*), intent(in) :: msg
+	err_matches = contains_substr(json%diagnostics%vec(1)%str, msg)
+end function err_matches
+
 end module jsonf__test
 
 program test
@@ -1209,6 +1416,8 @@ program test
 	call test_in7(nfail, ntot)
 	call test_in8(nfail, ntot)
 	call test_in9(nfail, ntot)
+	call test_errs(nfail, ntot)
+	call test_file_errs(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset

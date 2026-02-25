@@ -434,7 +434,7 @@ end function i32_to_str
 function i64_to_str(int_) result(str)
 	integer(kind = 8), intent(in) :: int_
 	character(len = :), allocatable :: str
-	character :: buffer*16
+	character :: buffer*24
 	write(buffer, "(i0)") int_
 	str = trim(buffer)
 end function i64_to_str
@@ -927,6 +927,20 @@ function quote(str)
 	quote = '"'//str//'"'
 end function quote
 
+function unquote(str)
+	character(len=*), intent(in) :: str
+	character(len=:), allocatable :: unquote
+	if (len(str) < 2) then
+		unquote = str
+		return
+	end if
+	if (str(1:1) == '"' .and. str(len(str):len(str)) == '"') then
+		unquote = str(2: len(str)-1)
+		return
+	end if
+	unquote = str
+end function unquote
+
 !===============================================================================
 
 logical function contains(haystack, needle)
@@ -934,10 +948,36 @@ logical function contains(haystack, needle)
 	contains = scan(haystack, needle) > 0
 end function contains
 
+logical function contains_substr(haystack, needle)
+	character(len=*), intent(in) :: haystack, needle
+	contains_substr = index(haystack, needle) > 0
+end function contains_substr
+
 logical function is_all_digits(str)
 	character(len=*), intent(in) :: str
 	is_all_digits = verify(str, DIGIT_CHARS) <= 0
 end function is_all_digits
+
+!===============================================================================
+
+function tabs_to_spaces(str_) result(str_out)
+	! Replace each tab with a *single* space.  This is useful for alignment and
+	! it makes allocation easy
+	character(len = *), intent(in)  :: str_
+	character(len = :), allocatable :: str_out
+
+	integer :: i
+
+	allocate(character(len = len(str_)) :: str_out)
+	do i = 1, len(str_)
+		if (str_(i:i) == tab) then
+			str_out(i:i) = ' '
+		else
+			str_out(i:i) = str_(i:i)
+		end if
+	end do
+
+end function tabs_to_spaces
 
 !===============================================================================
 
