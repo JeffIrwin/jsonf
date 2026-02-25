@@ -930,6 +930,10 @@ end function quote
 function unquote(str)
 	character(len=*), intent(in) :: str
 	character(len=:), allocatable :: unquote
+	if (len(str) < 2) then
+		unquote = str
+		return
+	end if
 	if (str(1:1) == '"' .and. str(len(str):len(str)) == '"') then
 		unquote = str(2: len(str)-1)
 		return

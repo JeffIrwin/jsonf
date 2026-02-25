@@ -136,7 +136,7 @@ module jsonf
 		!********
 		! Public members
 
-		logical :: is_ok = .true.  !> error state
+		logical :: is_ok = .true.  ! error state
 		type(str_vec_t) :: diagnostics
 
 		! Syntax strictness/permissiveness options
@@ -151,8 +151,8 @@ module jsonf
 		! String, print, and write output formatting options
 		character(len=:), allocatable :: indent
 		logical :: compact = .false.
-		logical :: hashed_order = .false.  !> if false, output in the same order as the input source
-		logical :: print_errors_immediately = .true.  !> if false, you can call json%print_errors() afterwards
+		logical :: hashed_order = .false.  ! if false, output in the same order as the input source
+		logical :: print_errors_immediately = .true.  ! if false, you can call json%print_errors() afterwards
 
 		logical :: lint = .false.  ! don't save objects or arrays while linting for performance
 
@@ -378,7 +378,7 @@ function lex(lexer) result(token)
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
-	
+
 		text = sb%trim()
 		text_strip = rm_char(text, "_")
 		!print *, "text = ", text
@@ -1404,37 +1404,33 @@ end subroutine err_arr_delim
 
 subroutine err_number(lexer, start, number_text, reason)
 	type(lexer_t), intent(inout) :: lexer
+	integer, intent(in) :: start
 	character(len=*), intent(in) :: number_text, reason
 	!********
 	character(len=:), allocatable :: descr, summary, context
-	integer :: start, length
+	integer :: length
 
 	descr = ERROR_STR // &
 		'bad number format: ' // number_text // ' (' // reason // ')'
-	!print *, "descr = ", descr
 
-	!!start   = lexer%current_token%col + 1
-	!print *, "current token text = ", lexer%current_token%text
-	!print *, "start = ", start
 	length  = len(number_text)
 	context = underline(lexer, start, length)
 	summary = fg_bright_red//" bad number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
-	!print *, "in err_inv*, lexer%is_ok = ", lexer%is_ok
 
 end subroutine err_number
 
 subroutine err_float(lexer, start, number_text)
 	type(lexer_t), intent(inout) :: lexer
+	integer, intent(in) :: start
 	character(len=*), intent(in) :: number_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
-	integer :: start, length
+	integer :: length
 
 	descr = ERROR_STR // &
 		'bad floating-point number format: ' // number_text
-	!print *, "descr = ", descr
 
 	length  = len(number_text)
 	context = underline(lexer, start, length)
@@ -1446,14 +1442,14 @@ end subroutine err_float
 
 subroutine err_integer(lexer, start, number_text)
 	type(lexer_t), intent(inout) :: lexer
+	integer, intent(in) :: start
 	character(len=*), intent(in) :: number_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
-	integer :: start, length
+	integer :: length
 
 	descr = ERROR_STR // &
 		'bad integer number format: ' // number_text
-	!print *, "descr = ", descr
 
 	length  = len(number_text)
 	context = underline(lexer, start, length)
