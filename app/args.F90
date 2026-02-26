@@ -212,8 +212,8 @@ function parse_args() result(args)
 		write(*,*) "    -Wno-commas       Suppress trailing-comma warnings in --lint"
 		write(*,*) "    -Wcommas          Warn about trailing commas"
 		write(*,*) "    -Werror=commas    Treat trailing commas as errors"
-		write(*,*) "    -Wnumbers         Warn about out-of-range numbers"
-		write(*,*) "    -Werror=numbers   Treat out-of-range numbers as errors"
+		write(*,*) "    -Wnumbers         Warn for bad number formats like '.0' or '1.d2'"
+		write(*,*) "    -Werror=numbers   Treat bad number formats as errors"
 		write(*,*)
 
 		if (error) call panic("")
