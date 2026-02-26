@@ -740,6 +740,19 @@ subroutine test_float_jsons(nfail, ntot)
 	expect = -326.d-11
 	TEST(abs(val%sca%f64 - expect) <= 1.d-20, "test_float_jsons 5", nfail, ntot)
 
+	! i64 overflow silently promoted to f64
+	call json%read_str('99999999999999999999')
+	val = json%get_val('')
+	TEST(val%sca%type == F64_TYPE, "i64 overflow -> f64 type", nfail, ntot)
+	TEST(json%diagnostics%len == 0, "i64 overflow -> no error", nfail, ntot)
+	TEST(abs(val%sca%f64 - 1.d20) <= TOL * 1.d20, "i64 overflow -> f64 value", nfail, ntot)
+
+	call json%read_str('{"big": 99999999999999999999}')
+	val = json%get_val('/big')
+	TEST(val%sca%type == F64_TYPE, "i64 overflow in obj -> f64 type", nfail, ntot)
+	TEST(json%diagnostics%len == 0, "i64 overflow in obj -> no error", nfail, ntot)
+	TEST(abs(val%sca%f64 - 1.d20) <= TOL * 1.d20, "i64 overflow in obj -> f64 value", nfail, ntot)
+
 end subroutine test_float_jsons
 
 subroutine test_basic_jsons(nfail, ntot)
@@ -1247,13 +1260,9 @@ subroutine test_errs(nfail, ntot)
 	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
 	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
 
+	! i64 overflow is silently promoted to f64, not an error
 	call json%read_str('[123456789123456789123]')
-	expect = "bad integer number format"
-	place  = "<STR_STREAM>:1:2"
-	under  = "1m"//repeat("^", 21)//ESC
-	TEST(err_matches(json, expect), "diag : "//expect, nfail, ntot)
-	TEST(err_matches(json, place ), "place: "//expect, nfail, ntot)
-	TEST(err_matches(json, under ), "under: "//expect, nfail, ntot)
+	TEST(json%diagnostics%len == 0, "i64 overflow in arr -> no error", nfail, ntot)
 
 	call json%read_str('{"a": "hello}')
 	expect = "unterminated string literal"

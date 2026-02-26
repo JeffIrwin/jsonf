@@ -5,23 +5,20 @@ module jsonf
 	implicit none
 
 	! TODO:
-	! - float improvements:
-	!   * auto convert i64 overflows to f64?
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
 	!   other options, e.g. error_trailing_commas, require leading digit before
 	!   decimal point, etc.
 	!   * name strict, pedantic, -Wall or -Werror
 	!   * probably keep error_duplicate_keys orthogonal to this since standard
 	!     allows dupes
-	! - error handling
-	!   * don't panic unless stop-on-error is requested
 	! - get_val() improvements:
 	!   * need a related `json%len(pointer)` method, or like json-fortran's
 	!     %info(), to get len (n_children) of array (or object). maybe refactor
 	!     get_val to take multiple opt out args or a struct to copy in the
 	!     appropriate requested data
 	!   * optional 'found' out-arg
-	!   * name get_val() or just get() ?
+	!   * rename get_val() to just just get(). keep get_val() too as an alias
+	!     for backwards compatibility
 	!   * add typed versions: get_i64(), get_bool(), etc.
 	!   * throw error for bad type
 	!   * get_vec_i64(), get_vec_bool(), etc.
@@ -49,16 +46,12 @@ module jsonf
 	!     we're saving the whole file in memory now anyway. maybe there's a
 	!     simpler approach
 	! - ci/cd
+	!   * linux done, in docker including on ci/cd
 	!   * test on windows, linux (macos?)
 	!   * test with different fortran compilers
 	!   * cmake
+	!     + an auto-generate cmake list has been added
 	! - benchmark performance
-	! - unit tests must cover bad syntax -- it's important that they don't go
-	!   into an infinite loop on anything like unterminated strs (i just did
-	!   this :facepalm:)
-	!   * invalid tokens
-	!   * unterminated strings
-	!   * invalid numbers, e.g. bad floats that look almost like a float
 	! - cmd args:
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
@@ -417,9 +410,16 @@ function lex(lexer) result(token)
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, l0, c0, text, sca)
 			else
-				call err_integer(lexer, c0, text)
-				token = new_token(BAD_TOKEN, l0, c0, text)
-				return
+				! i64 overflow — try f64 fallback
+				read(text_strip, *, iostat = io) f64
+				if (io == EXIT_SUCCESS) then
+					sca   = new_literal(F64_TYPE, f64 = f64)
+					token = new_token(F64_TOKEN, l0, c0, text, sca)
+				else
+					call err_integer(lexer, c0, text)
+					token = new_token(BAD_TOKEN, l0, c0, text)
+					return
+				end if
 			end if
 		end if
 
