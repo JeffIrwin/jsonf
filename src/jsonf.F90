@@ -417,9 +417,16 @@ function lex(lexer) result(token)
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, l0, c0, text, sca)
 			else
-				call err_integer(lexer, c0, text)
-				token = new_token(BAD_TOKEN, l0, c0, text)
-				return
+				! i64 overflow — try f64 fallback
+				read(text_strip, *, iostat = io) f64
+				if (io == EXIT_SUCCESS) then
+					sca   = new_literal(F64_TYPE, f64 = f64)
+					token = new_token(F64_TOKEN, l0, c0, text, sca)
+				else
+					call err_integer(lexer, c0, text)
+					token = new_token(BAD_TOKEN, l0, c0, text)
+					return
+				end if
 			end if
 		end if
 
