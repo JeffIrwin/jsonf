@@ -11,25 +11,6 @@ module jsonf
 	!   * name strict, pedantic, -Wall or -Werror
 	!   * probably keep error_duplicate_keys orthogonal to this since standard
 	!     allows dupes
-	! - get_val() improvements:
-	!   * review of claude's implementation:
-	!     + json%len() (i.e. len_json()) is not covered in tests
-	!     + new error messages are not tested, e.g. non-uniform vector-of-vector
-	!       sizes for get_mat*(), i.e. non-uniform rows
-	!   * need a related `json%len(pointer)` method, or like json-fortran's
-	!     %info(), to get len (n_children) of array (or object). maybe refactor
-	!     get_val to take multiple opt out args or a struct to copy in the
-	!     appropriate requested data
-	!   * optional 'found' out-arg
-	!   * rename get_val() to just just get(). keep get_val() too as an alias
-	!     for backwards compatibility
-	!   * add typed versions: get_i64(), get_bool(), etc.
-	!   * throw error for bad type
-	!   * get_vec_i64(), get_vec_bool(), etc.
-	!   * i think json-fortran has something like get_matrix(). obviously there
-	!     should be restrictions, like each sub-array must be the same size
-	!   * Fortran does not really have null, so we will need is_null() instead
-	!     of get_null()
 	! - write details in readme
 	! - expose less
 	!   * move as many implementation details as possible into something like
