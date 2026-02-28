@@ -1397,7 +1397,7 @@ logical function err_matches(json, msg)
 end function err_matches
 
 subroutine test_get_api(nfail, ntot)
-	! Test the new get_val() API improvements (Phase 1-6)
+	! Test the new get_val() API improvements
 	integer, intent(inout) :: nfail, ntot
 	!********
 	type(json_t) :: json
@@ -1417,7 +1417,7 @@ subroutine test_get_api(nfail, ntot)
 	write(*,*) "Unit testing get_val() API improvements ..."
 
 	!===========================================================================
-	! Phase 2: get() alias, found argument
+	! get() alias, found argument
 	!===========================================================================
 
 	call json%read_str('{"a": 1, "b": "hello", "c": null}')
@@ -1436,7 +1436,7 @@ subroutine test_get_api(nfail, ntot)
 	TEST(json%diagnostics%len == 0, "get_val missing key: no diag w/ found", nfail, ntot)
 
 	!===========================================================================
-	! Phase 3: has(), is_null(), len()
+	! has(), is_null(), len()
 	!===========================================================================
 
 	call json%read_str('{"a": 1, "b": [10, 20, 30], "c": null, "d": {"x":1}}')
@@ -1455,7 +1455,7 @@ subroutine test_get_api(nfail, ntot)
 	TEST(json%len('/z') == 0, "len: missing key", nfail, ntot)
 
 	!===========================================================================
-	! Phase 4: typed scalar getters
+	! typed scalar getters
 	!===========================================================================
 
 	call json%read_str('{"i": 42, "f": 3.14, "s": "hi", "b": true, "n": null}')
@@ -1518,7 +1518,7 @@ subroutine test_get_api(nfail, ntot)
 	TEST(.not. found, "get_bool missing: found=.false.", nfail, ntot)
 
 	!===========================================================================
-	! Phase 5: vector getters
+	! vector getters
 	!===========================================================================
 
 	! get_vec_i64 happy path
@@ -1583,7 +1583,7 @@ subroutine test_get_api(nfail, ntot)
 	TEST(.not. found, "get_vec_str missing: found=.false.", nfail, ntot)
 
 	!===========================================================================
-	! Phase 6: matrix getters
+	! matrix getters
 	!===========================================================================
 
 	! get_mat_i64 happy path

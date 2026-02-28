@@ -2104,8 +2104,6 @@ function type_name(type_) result(name)
 end function type_name
 
 !===============================================================================
-! Phase 3: has, is_null, len
-!===============================================================================
 
 logical function has_json(json, ptr)
 	class(json_t), intent(inout) :: json
@@ -2148,8 +2146,6 @@ integer function len_json(json, ptr)
 	end select
 end function len_json
 
-!===============================================================================
-! Phase 4: typed scalar getters
 !===============================================================================
 
 function get_i64_json(json, ptr, found) result(val)
@@ -2288,8 +2284,6 @@ function get_bool_json(json, ptr, found) result(val)
 	end if
 end function get_bool_json
 
-!===============================================================================
-! Phase 5: vector getters
 !===============================================================================
 
 function get_vec_i64_json(json, ptr, found) result(val)
@@ -2506,8 +2500,6 @@ function get_vec_str_json(json, ptr, found) result(val)
 	if (present(found)) found = .true.
 end function get_vec_str_json
 
-!===============================================================================
-! Phase 6: matrix getters
 !===============================================================================
 
 function get_mat_i64_json(json, ptr, found) result(val)
