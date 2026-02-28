@@ -1397,7 +1397,7 @@ logical function err_matches(json, msg)
 end function err_matches
 
 subroutine test_get_api(nfail, ntot)
-	! Test the new get_val() API improvements
+	! Test the get_val() API improvements
 	integer, intent(inout) :: nfail, ntot
 	!********
 	type(json_t) :: json
@@ -1409,6 +1409,7 @@ subroutine test_get_api(nfail, ntot)
 	logical :: bool, found
 	logical, allocatable :: vec_bool(:)
 	character(len=:), allocatable :: str
+	character(len=:), allocatable :: e   ! test message helper for long strings
 	type(str_t), allocatable :: vec_str(:)
 	real(kind=8), parameter :: TOL = 1.d-9
 
@@ -1624,6 +1625,347 @@ subroutine test_get_api(nfail, ntot)
 	call json%read_str('{"a":1}')
 	mat_f64 = json%get_mat_f64('/z', found)
 	TEST(.not. found, "get_mat_f64 missing: found=.false.", nfail, ntot)
+
+	!===========================================================================
+	! resolve_copy errors (get_val)
+	!===========================================================================
+
+	! index out of bounds with found
+	call json%read_str('[1, 2]')
+	jval = json%get_val('/5', found)
+	TEST(.not. found, "get_val out of bounds: found=.false.", nfail, ntot)
+	e = "get_val out of bounds: no error with found"
+	TEST(json%diagnostics%len == 0, e, nfail, ntot)
+
+	! index out of bounds without found
+	call json%read_str('[1, 2]')
+	jval = json%get_val('/5')
+	e = "get_val out of bounds: error pushed"
+	TEST(err_matches(json, 'out of bounds'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_f64 type mismatch
+	!===========================================================================
+
+	! get_f64 type mismatch with found (no error)
+	call json%read_str('{"s": "hello"}')
+	f64 = json%get_f64('/s', found)
+	TEST(.not. found, "get_f64 type mismatch: found=.false.", nfail, ntot)
+	e = "get_f64 type mismatch: no error with found"
+	TEST(json%diagnostics%len == 0, e, nfail, ntot)
+
+	! get_f64 type mismatch without found (pushes error)
+	call json%read_str('{"s": "hello"}')
+	f64 = json%get_f64('/s')
+	e = "get_f64 type mismatch: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_f64 type mismatch: error says f64"
+	TEST(err_matches(json, 'expected f64'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_str type mismatch
+	!===========================================================================
+
+	! get_str type mismatch with found (no error)
+	call json%read_str('{"i": 42}')
+	str = json%get_str('/i', found)
+	TEST(.not. found, "get_str type mismatch: found=.false.", nfail, ntot)
+	e = "get_str type mismatch: no error with found"
+	TEST(json%diagnostics%len == 0, e, nfail, ntot)
+
+	! get_str type mismatch without found (pushes error)
+	call json%read_str('{"i": 42}')
+	str = json%get_str('/i')
+	e = "get_str type mismatch: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_str type mismatch: error says str"
+	TEST(err_matches(json, 'expected str'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_bool type mismatch
+	!===========================================================================
+
+	! get_bool type mismatch with found (no error)
+	call json%read_str('{"i": 42}')
+	bool = json%get_bool('/i', found)
+	TEST(.not. found, "get_bool type mismatch: found=.false.", nfail, ntot)
+	e = "get_bool type mismatch: no error with found"
+	TEST(json%diagnostics%len == 0, e, nfail, ntot)
+
+	! get_bool type mismatch without found (pushes error)
+	call json%read_str('{"i": 42}')
+	bool = json%get_bool('/i')
+	e = "get_bool type mismatch: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_bool type mismatch: expected bool"
+	TEST(err_matches(json, 'expected bool'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_vec_i64 errors
+	!===========================================================================
+
+	! get_vec_i64 root not array with found
+	call json%read_str('{"a": 1}')
+	vec_i64 = json%get_vec_i64('', found)
+	TEST(.not. found, "get_vec_i64 root not array: found=.false.", nfail, ntot)
+	e = "get_vec_i64 root not array: no error w/ found"
+	TEST(json%diagnostics%len == 0, e, nfail, ntot)
+
+	! get_vec_i64 root not array without found
+	call json%read_str('{"a": 1}')
+	vec_i64 = json%get_vec_i64('')
+	e = "get_vec_i64 root not array: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_vec_i64 root not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_vec_i64 element type mismatch without found
+	call json%read_str('[1, "oops", 3]')
+	vec_i64 = json%get_vec_i64('')
+	e = "get_vec_i64 elem mismatch: error pushed"
+	TEST(err_matches(json, 'array element'), e, nfail, ntot)
+	e = "get_vec_i64 elem mismatch: expected i64"
+	TEST(err_matches(json, 'expected i64'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_vec_f64 errors
+	!===========================================================================
+
+	! get_vec_f64 missing with found
+	call json%read_str('{"a":1}')
+	vec_f64 = json%get_vec_f64('/z', found)
+	TEST(.not. found, "get_vec_f64 missing: found=.false.", nfail, ntot)
+
+	! get_vec_f64 root not array with found
+	call json%read_str('{"a": 1}')
+	vec_f64 = json%get_vec_f64('', found)
+	TEST(.not. found, "get_vec_f64 root not array: found=.false.", nfail, ntot)
+	e = "get_vec_f64 root not array: no error w/ found"
+	TEST(json%diagnostics%len == 0, e, nfail, ntot)
+
+	! get_vec_f64 root not array without found
+	call json%read_str('{"a": 1}')
+	vec_f64 = json%get_vec_f64('')
+	e = "get_vec_f64 root not array: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_vec_f64 root not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_vec_f64 element type mismatch with found
+	call json%read_str('[1.0, "oops"]')
+	vec_f64 = json%get_vec_f64('', found)
+	TEST(.not. found, "get_vec_f64 elem mismatch: found=.false.", nfail, ntot)
+
+	! get_vec_f64 element type mismatch without found
+	call json%read_str('[1.0, "oops"]')
+	vec_f64 = json%get_vec_f64('')
+	e = "get_vec_f64 elem mismatch: error pushed"
+	TEST(err_matches(json, 'array element'), e, nfail, ntot)
+	e = "get_vec_f64 elem mismatch: expected f64"
+	TEST(err_matches(json, 'expected f64'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_vec_bool errors
+	!===========================================================================
+
+	! get_vec_bool missing with found
+	call json%read_str('{"a":1}')
+	vec_bool = json%get_vec_bool('/z', found)
+	TEST(.not. found, "get_vec_bool missing: found=.false.", nfail, ntot)
+
+	! get_vec_bool root not array with found
+	call json%read_str('{"a": 1}')
+	vec_bool = json%get_vec_bool('', found)
+	TEST(.not. found, "get_vec_bool root not array: found=.false.", nfail, ntot)
+
+	! get_vec_bool root not array without found
+	call json%read_str('{"a": 1}')
+	vec_bool = json%get_vec_bool('')
+	e = "get_vec_bool root not array: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_vec_bool root not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_vec_bool element type mismatch with found
+	call json%read_str('[true, 42]')
+	vec_bool = json%get_vec_bool('', found)
+	TEST(.not. found, "get_vec_bool elem mismatch: found=.false.", nfail, ntot)
+
+	! get_vec_bool element type mismatch without found
+	call json%read_str('[true, 42]')
+	vec_bool = json%get_vec_bool('')
+	e = "get_vec_bool elem mismatch: error pushed"
+	TEST(err_matches(json, 'array element'), e, nfail, ntot)
+	e = "get_vec_bool elem mismatch: expected bool"
+	TEST(err_matches(json, 'expected bool'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_vec_str errors
+	!===========================================================================
+
+	! get_vec_str root not array with found
+	call json%read_str('{"a": 1}')
+	vec_str = json%get_vec_str('', found)
+	TEST(.not. found, "get_vec_str root not array: found=.false.", nfail, ntot)
+
+	! get_vec_str root not array without found
+	call json%read_str('{"a": 1}')
+	vec_str = json%get_vec_str('')
+	e = "get_vec_str root not array: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_vec_str root not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_vec_str element type mismatch with found
+	call json%read_str('["hello", 42]')
+	vec_str = json%get_vec_str('', found)
+	TEST(.not. found, "get_vec_str elem mismatch: found=.false.", nfail, ntot)
+
+	! get_vec_str element type mismatch without found
+	call json%read_str('["hello", 42]')
+	vec_str = json%get_vec_str('')
+	e = "get_vec_str elem mismatch: error pushed"
+	TEST(err_matches(json, 'array element'), e, nfail, ntot)
+	e = "get_vec_str elem mismatch: expected str"
+	TEST(err_matches(json, 'expected str'), e, nfail, ntot)
+
+	!===========================================================================
+	! get_mat_i64 errors
+	!===========================================================================
+
+	! get_mat_i64 non-uniform rows without found
+	call json%read_str('[[1,2],[3,4,5]]')
+	mat_i64 = json%get_mat_i64('')
+	e = "get_mat_i64 non-uniform: error pushed"
+	TEST(err_matches(json, 'array element at index 1'), e, nfail, ntot)
+	e = "get_mat_i64 non-uniform: expected 2 cols"
+	TEST(err_matches(json, 'expected 2'), e, nfail, ntot)
+
+	! get_mat_i64 root not array with found
+	call json%read_str('{"a": 1}')
+	mat_i64 = json%get_mat_i64('', found)
+	TEST(.not. found, "get_mat_i64 root not array: found=.false.", nfail, ntot)
+
+	! get_mat_i64 root not array without found
+	call json%read_str('{"a": 1}')
+	mat_i64 = json%get_mat_i64('')
+	e = "get_mat_i64 root not array: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_mat_i64 root not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_mat_i64 first element not array with found
+	call json%read_str('[1, 2, 3]')
+	mat_i64 = json%get_mat_i64('', found)
+	TEST(.not. found, "get_mat_i64 first not arr: found=.false.", nfail, ntot)
+
+	! get_mat_i64 first element not array without found
+	call json%read_str('[1, 2, 3]')
+	mat_i64 = json%get_mat_i64('')
+	e = "get_mat_i64 first not arr: error pushed"
+	TEST(err_matches(json, 'array element at index 0'), e, nfail, ntot)
+	e = "get_mat_i64 first not arr: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_mat_i64 row element not array with found
+	call json%read_str('[[1,2], "bad"]')
+	mat_i64 = json%get_mat_i64('', found)
+	TEST(.not. found, "get_mat_i64 row not array: found=.false.", nfail, ntot)
+
+	! get_mat_i64 row element not array without found
+	call json%read_str('[[1,2], "bad"]')
+	mat_i64 = json%get_mat_i64('')
+	e = "get_mat_i64 row not array: error pushed"
+	TEST(err_matches(json, 'array element at index 1'), e, nfail, ntot)
+	e = "get_mat_i64 row not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_mat_i64 element type mismatch with found
+	call json%read_str('[[1, "bad"]]')
+	mat_i64 = json%get_mat_i64('', found)
+	TEST(.not. found, "get_mat_i64 elem mismatch: found=.false.", nfail, ntot)
+
+	! get_mat_i64 element type mismatch without found
+	call json%read_str('[[1, "bad"]]')
+	mat_i64 = json%get_mat_i64('')
+	e = "get_mat_i64 elem mismatch: error pushed"
+	TEST(err_matches(json, 'array element at'), e, nfail, ntot)
+	e = "get_mat_i64 elem mismatch: expected i64"
+	TEST(err_matches(json, 'expected i64'), e, nfail, ntot)
+
+	! get_mat_i64 missing path with found
+	call json%read_str('{"a":1}')
+	mat_i64 = json%get_mat_i64('/z', found)
+	TEST(.not. found, "get_mat_i64 missing path: found=.false.", nfail, ntot)
+
+	!===========================================================================
+	! get_mat_f64 errors
+	!===========================================================================
+
+	! get_mat_f64 non-uniform rows with found
+	call json%read_str('[[1.0,2.0],[3.0]]')
+	mat_f64 = json%get_mat_f64('', found)
+	TEST(.not. found, "get_mat_f64 non-uniform: found=.false.", nfail, ntot)
+
+	! get_mat_f64 non-uniform rows without found
+	call json%read_str('[[1.0,2.0],[3.0]]')
+	mat_f64 = json%get_mat_f64('')
+	e = "get_mat_f64 non-uniform: error pushed"
+	TEST(err_matches(json, 'array element at index 1'), e, nfail, ntot)
+	e = "get_mat_f64 non-uniform: expected 2 cols"
+	TEST(err_matches(json, 'expected 2'), e, nfail, ntot)
+
+	! get_mat_f64 root not array with found
+	call json%read_str('{"a": 1}')
+	mat_f64 = json%get_mat_f64('', found)
+	TEST(.not. found, "get_mat_f64 root not array: found=.false.", nfail, ntot)
+
+	! get_mat_f64 root not array without found
+	call json%read_str('{"a": 1}')
+	mat_f64 = json%get_mat_f64('')
+	e = "get_mat_f64 root not array: error pushed"
+	TEST(err_matches(json, 'type mismatch'), e, nfail, ntot)
+	e = "get_mat_f64 root not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_mat_f64 first element not array with found
+	call json%read_str('[1.0, 2.0]')
+	mat_f64 = json%get_mat_f64('', found)
+	TEST(.not. found, "get_mat_f64 first not arr: found=.false.", nfail, ntot)
+
+	! get_mat_f64 first element not array without found
+	call json%read_str('[1.0, 2.0]')
+	mat_f64 = json%get_mat_f64('')
+	e = "get_mat_f64 first not arr: error pushed"
+	TEST(err_matches(json, 'array element at index 0'), e, nfail, ntot)
+	e = "get_mat_f64 first not arr: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_mat_f64 row element not array with found
+	call json%read_str('[[1.0,2.0], "bad"]')
+	mat_f64 = json%get_mat_f64('', found)
+	TEST(.not. found, "get_mat_f64 row not array: found=.false.", nfail, ntot)
+
+	! get_mat_f64 row element not array without found
+	call json%read_str('[[1.0,2.0], "bad"]')
+	mat_f64 = json%get_mat_f64('')
+	e = "get_mat_f64 row not array: error pushed"
+	TEST(err_matches(json, 'array element at index 1'), e, nfail, ntot)
+	e = "get_mat_f64 row not array: expected array"
+	TEST(err_matches(json, 'expected array'), e, nfail, ntot)
+
+	! get_mat_f64 element type mismatch with found
+	call json%read_str('[[1.0, "bad"]]')
+	mat_f64 = json%get_mat_f64('', found)
+	TEST(.not. found, "get_mat_f64 elem mismatch: found=.false.", nfail, ntot)
+
+	! get_mat_f64 element type mismatch without found
+	call json%read_str('[[1.0, "bad"]]')
+	mat_f64 = json%get_mat_f64('')
+	e = "get_mat_f64 elem mismatch: error pushed"
+	TEST(err_matches(json, 'array element at'), e, nfail, ntot)
+	e = "get_mat_f64 elem mismatch: expected f64"
+	TEST(err_matches(json, 'expected f64'), e, nfail, ntot)
 
 end subroutine test_get_api
 

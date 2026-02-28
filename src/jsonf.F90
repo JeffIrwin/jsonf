@@ -12,6 +12,10 @@ module jsonf
 	!   * probably keep error_duplicate_keys orthogonal to this since standard
 	!     allows dupes
 	! - get_val() improvements:
+	!   * review of claude's implementation:
+	!     + json%len() (i.e. len_json()) is not covered in tests
+	!     + new error messages are not tested, e.g. non-uniform vector-of-vector
+	!       sizes for get_mat*(), i.e. non-uniform rows
 	!   * need a related `json%len(pointer)` method, or like json-fortran's
 	!     %info(), to get len (n_children) of array (or object). maybe refactor
 	!     get_val to take multiple opt out args or a struct to copy in the
