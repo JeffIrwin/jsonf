@@ -157,7 +157,21 @@ module jsonf
 
 		contains
 			procedure :: &
+				get          => get_val_json, &
 				get_val      => get_val_json, &
+				get_i64      => get_i64_json, &
+				get_f64      => get_f64_json, &
+				get_str      => get_str_json, &
+				get_bool     => get_bool_json, &
+				get_vec_i64  => get_vec_i64_json, &
+				get_vec_f64  => get_vec_f64_json, &
+				get_vec_str  => get_vec_str_json, &
+				get_vec_bool => get_vec_bool_json, &
+				get_mat_i64  => get_mat_i64_json, &
+				get_mat_f64  => get_mat_f64_json, &
+				has          => has_json, &
+				is_null      => is_null_json, &
+				len          => len_json, &
 				write        => write_json, &
 				print        => print_json, &
 				print_errors => json_print_errors, &
@@ -1084,42 +1098,45 @@ subroutine parse_val(json, lexer, val)
 
 end subroutine parse_val
 
-function get_val_json(json, ptr) result(val)
+function get_val_json(json, ptr, found) result(val)
 	! User-facing function
 	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: ptr  ! RFC 6901 path string
+	logical, intent(out), optional :: found
 	type(json_val_t) :: val
 	!********
+	logical :: found_
 
 	! If any backslash escape sequences should be processed in the ptr str, it
 	! could be done here.  See e.g. the cases with expected results 5 and 6
 	! ("/i\\j") in test_in9()
 
-	call get_val_core(json, json%root, ptr, 1, val)
+	call resolve_copy(json, json%root, ptr, 1, val, found_, present(found))
+	if (present(found)) found = found_
 
 end function get_val_json
 
-recursive subroutine get_val_core(json, val, ptr, i0, outval)
-	! Private subroutine
+recursive subroutine resolve_copy(json, val, ptr, i0, outval, found, silent)
+	! Walk path ptr[i0:] through val; copy the target node into outval.
+	! When silent=.true., path-not-found and index errors are suppressed.
 	type(json_t), intent(inout) :: json
 	type(json_val_t), intent(in) :: val
 	character(len=*), intent(in) :: ptr
 	integer, intent(in) :: i0  ! index of last '/' separator in ptr path string
-	type(json_val_t) :: outval
+	type(json_val_t), intent(out) :: outval
+	logical, intent(out) :: found
+	logical, intent(in) :: silent
 	!********
 	character(len=:), allocatable :: key, closest, err
-	integer :: i, j, k
+	integer :: i, j, k, io
 	integer(kind=4) :: idx
-	logical :: found
+
+	found = .false.
 
 	if (i0 > len(ptr)) then
 		! Base case: whole path has been walked
-
-		! Hopefully this is a small copy, unless user is doing something weird
-		! like querying the root
-		!
-		! Could even check type and warn if not scalar/primitive
 		call copy_val(outval, val)
+		found = .true.
 		return
 	end if
 
@@ -1164,41 +1181,116 @@ recursive subroutine get_val_core(json, val, ptr, i0, outval)
 		k = k + 1
 	end do
 	key = key(1:k-1)
-	!key = escape(key)
-	!print *, "key = ", key
 
 	select case (val%type)
 	case (OBJ_TYPE)
 		idx = get_map_idx(val, key, found)
 		if (.not. found) then
-			closest = get_closest_key(val, key)
-			err = ERROR_STR//"key "//quote(key_hi(key))//" not found"// &
-				LINE_FEED//"Did you mean "//quote(key_hi(closest))//"?"
-			call json%diagnostics%push(err)
-			json%is_ok = .false.
-			if (json%print_errors_immediately) write(*, "(a)") err
+			if (.not. silent) then
+				closest = get_closest_key(val, key)
+				err = ERROR_STR//"key "//quote(key_hi(key))//" not found"// &
+					LINE_FEED//"Did you mean "//quote(key_hi(closest))//"?"
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
 			return
 		end if
-		call get_val_core(json, val%vals(idx), ptr, i, outval)
+		call resolve_copy(json, val%vals(idx), ptr, i, outval, found, silent)
 
 	case (ARR_TYPE)
-		idx = read_i32(key) ! TODO: iostat
-		!print *, "idx = ", idx
-		if (idx < 0 .or. idx >= val%narr) then
-			! TODO: print bounds, for consistency with printing closest key
-			err = ERROR_STR//"index "//to_str(idx)//" out of bounds"
-			call json%diagnostics%push(err)
-			json%is_ok = .false.
-			if (json%print_errors_immediately) write(*, "(a)") err
+		read(key, *, iostat=io) idx
+		if (io /= EXIT_SUCCESS .or. idx < 0 .or. idx >= val%narr) then
+			found = .false.
+			if (.not. silent) then
+				! TODO: print bounds, for consistency with printing closest key
+				err = ERROR_STR//"index "//trim(key)//" out of bounds"
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
 			return
 		end if
-		call get_val_core(json, val%arr(idx+1), ptr, i, outval)  ! convert 0-index to 1-index
+		call resolve_copy(json, val%arr(idx+1), ptr, i, outval, found, silent)  ! convert 0-index to 1-index
 
 	case default
-		call panic("bad type in get_val_json()")
+		if (.not. silent) call panic("bad type in resolve_copy()")
 	end select
 
-end subroutine get_val_core
+end subroutine resolve_copy
+
+recursive subroutine path_meta(val, ptr, i0, found, val_type, narr, nkeys)
+	! Like resolve_copy but does NOT copy the value — only returns metadata.
+	! Used by has(), is_null(), and len() to avoid deep-copying large subtrees.
+	type(json_val_t), intent(in) :: val
+	character(len=*), intent(in) :: ptr
+	integer, intent(in) :: i0
+	logical, intent(out) :: found
+	integer, intent(out) :: val_type, narr, nkeys
+	!********
+	character(len=:), allocatable :: key
+	integer :: i, j, k, io
+	integer(kind=4) :: idx
+
+	found = .false.
+	val_type = 0
+	narr = 0
+	nkeys = 0
+
+	if (i0 > len(ptr)) then
+		found = .true.
+		val_type = val%type
+		narr = val%narr
+		nkeys = val%nkeys
+		return
+	end if
+
+	i = i0 + 1
+	do
+		if (i > len(ptr)) exit
+		if (ptr(i:i) == "/") exit
+		i = i + 1
+	end do
+
+	key = ptr(i0+1: i-1)
+	j = i0
+	k = 1
+	do while (j < i-1)
+		j = j + 1
+		if (j+1 <= len(ptr)) then
+			if (ptr(j:j+1) == "~0") then
+				key(k:k) = '~'
+				k = k + 1
+				j = j + 1
+				cycle
+			else if (ptr(j:j+1) == "~1") then
+				key(k:k) = '/'
+				k = k + 1
+				j = j + 1
+				cycle
+			end if
+		end if
+		key(k:k) = ptr(j:j)
+		k = k + 1
+	end do
+	key = key(1:k-1)
+
+	select case (val%type)
+	case (OBJ_TYPE)
+		idx = get_map_idx(val, key, found)
+		if (.not. found) return
+		call path_meta(val%vals(idx), ptr, i, found, val_type, narr, nkeys)
+
+	case (ARR_TYPE)
+		read(key, *, iostat=io) idx
+		if (io /= EXIT_SUCCESS .or. idx < 0 .or. idx >= val%narr) return
+		call path_meta(val%arr(idx+1), ptr, i, found, val_type, narr, nkeys)
+
+	case default
+		! scalar at a non-terminal position: not found
+	end select
+
+end subroutine path_meta
 
 function key_hi(str)
 	! I'm setting up a syntax-highlighting framework here for later more general
@@ -1986,6 +2078,643 @@ integer function levenshtein(s, t)
 	levenshtein = v0(n+1)
 
 end function levenshtein
+
+function type_name(type_) result(name)
+	! Human-readable name for a JSON value type constant
+	integer, intent(in) :: type_
+	character(len=:), allocatable :: name
+	select case (type_)
+	case (I64_TYPE)
+		name = "i64"
+	case (F64_TYPE)
+		name = "f64"
+	case (STR_TYPE)
+		name = "str"
+	case (BOOL_TYPE)
+		name = "bool"
+	case (NULL_TYPE)
+		name = "null"
+	case (ARR_TYPE)
+		name = "array"
+	case (OBJ_TYPE)
+		name = "object"
+	case default
+		name = "unknown"
+	end select
+end function type_name
+
+!===============================================================================
+! Phase 3: has, is_null, len
+!===============================================================================
+
+logical function has_json(json, ptr)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	!********
+	logical :: found
+	integer :: val_type, narr, nkeys
+	call path_meta(json%root, ptr, 1, found, val_type, narr, nkeys)
+	has_json = found
+end function has_json
+
+logical function is_null_json(json, ptr)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	!********
+	logical :: found
+	integer :: val_type, narr, nkeys
+	call path_meta(json%root, ptr, 1, found, val_type, narr, nkeys)
+	is_null_json = found .and. (val_type == NULL_TYPE)
+end function is_null_json
+
+integer function len_json(json, ptr)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	!********
+	logical :: found
+	integer :: val_type, narr, nkeys
+	call path_meta(json%root, ptr, 1, found, val_type, narr, nkeys)
+	if (.not. found) then
+		len_json = 0
+		return
+	end if
+	select case (val_type)
+	case (ARR_TYPE)
+		len_json = narr
+	case (OBJ_TYPE)
+		len_json = nkeys
+	case default
+		len_json = 0
+	end select
+end function len_json
+
+!===============================================================================
+! Phase 4: typed scalar getters
+!===============================================================================
+
+function get_i64_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	integer(kind=8) :: val
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	character(len=:), allocatable :: err
+
+	val = 0_8
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	select case (node%type)
+	case (I64_TYPE)
+		val = node%sca%i64
+		if (present(found)) found = .true.
+	case (F64_TYPE)
+		val = int(node%sca%f64, 8)
+		if (present(found)) found = .true.
+	case default
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected i64, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+	end select
+end function get_i64_json
+
+function get_f64_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	real(kind=8) :: val
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	character(len=:), allocatable :: err
+
+	val = 0.d0
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	select case (node%type)
+	case (F64_TYPE)
+		val = node%sca%f64
+		if (present(found)) found = .true.
+	case (I64_TYPE)
+		val = real(node%sca%i64, 8)
+		if (present(found)) found = .true.
+	case default
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected f64, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+	end select
+end function get_f64_json
+
+function get_str_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	character(len=:), allocatable :: val
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	character(len=:), allocatable :: err
+
+	val = ""
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type == STR_TYPE) then
+		val = node%sca%str
+		if (present(found)) found = .true.
+	else
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected str, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+	end if
+end function get_str_json
+
+function get_bool_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	logical :: val
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	character(len=:), allocatable :: err
+
+	val = .false.
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type == BOOL_TYPE) then
+		val = node%sca%bool
+		if (present(found)) found = .true.
+	else
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected bool, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+	end if
+end function get_bool_json
+
+!===============================================================================
+! Phase 5: vector getters
+!===============================================================================
+
+function get_vec_i64_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	integer(kind=8), allocatable :: val(:)
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	integer :: i
+	character(len=:), allocatable :: err
+
+	allocate(val(0))
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected array, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	deallocate(val)
+	allocate(val(node%narr))
+	do i = 1, node%narr
+		select case (node%arr(i)%type)
+		case (I64_TYPE)
+			val(i) = node%arr(i)%sca%i64
+		case (F64_TYPE)
+			val(i) = int(node%arr(i)%sca%f64, 8)
+		case default
+			deallocate(val)
+			allocate(val(0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)// &
+					' has type '//type_name(node%arr(i)%type)//', expected i64'
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end select
+	end do
+	if (present(found)) found = .true.
+end function get_vec_i64_json
+
+function get_vec_f64_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	real(kind=8), allocatable :: val(:)
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	integer :: i
+	character(len=:), allocatable :: err
+
+	allocate(val(0))
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected array, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	deallocate(val)
+	allocate(val(node%narr))
+	do i = 1, node%narr
+		select case (node%arr(i)%type)
+		case (F64_TYPE)
+			val(i) = node%arr(i)%sca%f64
+		case (I64_TYPE)
+			val(i) = real(node%arr(i)%sca%i64, 8)
+		case default
+			deallocate(val)
+			allocate(val(0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)// &
+					' has type '//type_name(node%arr(i)%type)//', expected f64'
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end select
+	end do
+	if (present(found)) found = .true.
+end function get_vec_f64_json
+
+function get_vec_bool_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	logical, allocatable :: val(:)
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	integer :: i
+	character(len=:), allocatable :: err
+
+	allocate(val(0))
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected array, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	deallocate(val)
+	allocate(val(node%narr))
+	do i = 1, node%narr
+		if (node%arr(i)%type /= BOOL_TYPE) then
+			deallocate(val)
+			allocate(val(0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)// &
+					' has type '//type_name(node%arr(i)%type)//', expected bool'
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end if
+		val(i) = node%arr(i)%sca%bool
+	end do
+	if (present(found)) found = .true.
+end function get_vec_bool_json
+
+function get_vec_str_json(json, ptr, found) result(val)
+	! Returns an array of str_t because Fortran allocatable character arrays
+	! require uniform length, which str_t avoids via its own allocation
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	type(str_t), allocatable :: val(:)
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	integer :: i
+	character(len=:), allocatable :: err
+
+	allocate(val(0))
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected array, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	deallocate(val)
+	allocate(val(node%narr))
+	do i = 1, node%narr
+		if (node%arr(i)%type /= STR_TYPE) then
+			deallocate(val)
+			allocate(val(0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)// &
+					' has type '//type_name(node%arr(i)%type)//', expected str'
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end if
+		val(i)%str = node%arr(i)%sca%str
+	end do
+	if (present(found)) found = .true.
+end function get_vec_str_json
+
+!===============================================================================
+! Phase 6: matrix getters
+!===============================================================================
+
+function get_mat_i64_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	integer(kind=8), allocatable :: val(:,:)
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	integer :: i, j, ncols
+	character(len=:), allocatable :: err
+
+	allocate(val(0, 0))
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected array, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	if (node%narr == 0) then
+		if (present(found)) found = .true.
+		return
+	end if
+	if (node%arr(1)%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'array element at index 0 has type '// &
+				type_name(node%arr(1)%type)//', expected array'
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	ncols = node%arr(1)%narr
+	deallocate(val)
+	allocate(val(node%narr, ncols))
+	do i = 1, node%narr
+		if (node%arr(i)%type /= ARR_TYPE) then
+			deallocate(val)
+			allocate(val(0, 0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)// &
+					' has type '//type_name(node%arr(i)%type)//', expected array'
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end if
+		if (node%arr(i)%narr /= ncols) then
+			deallocate(val)
+			allocate(val(0, 0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)//' has '// &
+					to_str(node%arr(i)%narr)//' elements, expected '//to_str(ncols)
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end if
+		do j = 1, ncols
+			select case (node%arr(i)%arr(j)%type)
+			case (I64_TYPE)
+				val(i, j) = node%arr(i)%arr(j)%sca%i64
+			case (F64_TYPE)
+				val(i, j) = int(node%arr(i)%arr(j)%sca%f64, 8)
+			case default
+				deallocate(val)
+				allocate(val(0, 0))
+				if (present(found)) then
+					found = .false.
+				else
+					err = ERROR_STR//'array element at ['//to_str(i-1)//', '// &
+						to_str(j-1)//'] has type '// &
+						type_name(node%arr(i)%arr(j)%type)//', expected i64'
+					call json%diagnostics%push(err)
+					json%is_ok = .false.
+					if (json%print_errors_immediately) write(*, "(a)") err
+				end if
+				return
+			end select
+		end do
+	end do
+	if (present(found)) found = .true.
+end function get_mat_i64_json
+
+function get_mat_f64_json(json, ptr, found) result(val)
+	class(json_t), intent(inout) :: json
+	character(len=*), intent(in) :: ptr
+	logical, intent(out), optional :: found
+	real(kind=8), allocatable :: val(:,:)
+	!********
+	type(json_val_t) :: node
+	logical :: found_
+	integer :: i, j, ncols
+	character(len=:), allocatable :: err
+
+	allocate(val(0, 0))
+	call resolve_copy(json, json%root, ptr, 1, node, found_, present(found))
+	if (.not. found_) then
+		if (present(found)) found = .false.
+		return
+	end if
+	if (node%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'type mismatch at '//quote(ptr)// &
+				': expected array, got '//type_name(node%type)
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	if (node%narr == 0) then
+		if (present(found)) found = .true.
+		return
+	end if
+	if (node%arr(1)%type /= ARR_TYPE) then
+		if (present(found)) then
+			found = .false.
+		else
+			err = ERROR_STR//'array element at index 0 has type '// &
+				type_name(node%arr(1)%type)//', expected array'
+			call json%diagnostics%push(err)
+			json%is_ok = .false.
+			if (json%print_errors_immediately) write(*, "(a)") err
+		end if
+		return
+	end if
+	ncols = node%arr(1)%narr
+	deallocate(val)
+	allocate(val(node%narr, ncols))
+	do i = 1, node%narr
+		if (node%arr(i)%type /= ARR_TYPE) then
+			deallocate(val)
+			allocate(val(0, 0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)// &
+					' has type '//type_name(node%arr(i)%type)//', expected array'
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end if
+		if (node%arr(i)%narr /= ncols) then
+			deallocate(val)
+			allocate(val(0, 0))
+			if (present(found)) then
+				found = .false.
+			else
+				err = ERROR_STR//'array element at index '//to_str(i-1)//' has '// &
+					to_str(node%arr(i)%narr)//' elements, expected '//to_str(ncols)
+				call json%diagnostics%push(err)
+				json%is_ok = .false.
+				if (json%print_errors_immediately) write(*, "(a)") err
+			end if
+			return
+		end if
+		do j = 1, ncols
+			select case (node%arr(i)%arr(j)%type)
+			case (F64_TYPE)
+				val(i, j) = node%arr(i)%arr(j)%sca%f64
+			case (I64_TYPE)
+				val(i, j) = real(node%arr(i)%arr(j)%sca%i64, 8)
+			case default
+				deallocate(val)
+				allocate(val(0, 0))
+				if (present(found)) then
+					found = .false.
+				else
+					err = ERROR_STR//'array element at ['//to_str(i-1)//', '// &
+						to_str(j-1)//'] has type '// &
+						type_name(node%arr(i)%arr(j)%type)//', expected f64'
+					call json%diagnostics%push(err)
+					json%is_ok = .false.
+					if (json%print_errors_immediately) write(*, "(a)") err
+				end if
+				return
+			end select
+		end do
+	end do
+	if (present(found)) found = .true.
+end function get_mat_f64_json
 
 end module jsonf
 

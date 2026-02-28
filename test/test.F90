@@ -1396,6 +1396,237 @@ logical function err_matches(json, msg)
 	err_matches = contains_substr(json%diagnostics%vec(1)%str, msg)
 end function err_matches
 
+subroutine test_get_api(nfail, ntot)
+	! Test the new get_val() API improvements (Phase 1-6)
+	integer, intent(inout) :: nfail, ntot
+	!********
+	type(json_t) :: json
+	type(json_val_t) :: jval
+	integer(kind=8) :: i64
+	integer(kind=8), allocatable :: vec_i64(:), mat_i64(:,:)
+	real(kind=8) :: f64
+	real(kind=8), allocatable :: vec_f64(:), mat_f64(:,:)
+	logical :: bool, found
+	logical, allocatable :: vec_bool(:)
+	character(len=:), allocatable :: str
+	type(str_t), allocatable :: vec_str(:)
+	real(kind=8), parameter :: TOL = 1.d-9
+
+	json%print_errors_immediately = .false.
+
+	write(*,*) "Unit testing get_val() API improvements ..."
+
+	!===========================================================================
+	! Phase 2: get() alias, found argument
+	!===========================================================================
+
+	call json%read_str('{"a": 1, "b": "hello", "c": null}')
+
+	! get() is an alias for get_val()
+	jval = json%get('/a')
+	TEST(jval%sca%i64 == 1_8, "get alias works", nfail, ntot)
+
+	! found=.true. when key exists
+	jval = json%get_val('/a', found)
+	TEST(found, "get_val found=.true. for existing key", nfail, ntot)
+
+	! found=.false. and no error when key missing
+	jval = json%get_val('/z', found)
+	TEST(.not. found, "get_val found=.false. for missing key", nfail, ntot)
+	TEST(json%diagnostics%len == 0, "get_val missing key: no diag w/ found", nfail, ntot)
+
+	!===========================================================================
+	! Phase 3: has(), is_null(), len()
+	!===========================================================================
+
+	call json%read_str('{"a": 1, "b": [10, 20, 30], "c": null, "d": {"x":1}}')
+
+	TEST(json%has('/a'), "has: existing key", nfail, ntot)
+	TEST(.not. json%has('/z'), "has: missing key", nfail, ntot)
+	TEST(json%diagnostics%len == 0, "has: no error on missing key", nfail, ntot)
+
+	TEST(json%is_null('/c'), "is_null: null value", nfail, ntot)
+	TEST(.not. json%is_null('/a'), "is_null: non-null value", nfail, ntot)
+	TEST(.not. json%is_null('/z'), "is_null: missing key returns false", nfail, ntot)
+
+	TEST(json%len('/b') == 3, "len: array", nfail, ntot)
+	TEST(json%len('/d') == 1, "len: object", nfail, ntot)
+	TEST(json%len('/a') == 0, "len: scalar", nfail, ntot)
+	TEST(json%len('/z') == 0, "len: missing key", nfail, ntot)
+
+	!===========================================================================
+	! Phase 4: typed scalar getters
+	!===========================================================================
+
+	call json%read_str('{"i": 42, "f": 3.14, "s": "hi", "b": true, "n": null}')
+
+	! get_i64
+	i64 = json%get_i64('/i')
+	TEST(i64 == 42_8, "get_i64 happy path", nfail, ntot)
+
+	! get_i64 from f64 (auto-convert)
+	i64 = json%get_i64('/f')
+	TEST(i64 == 3_8, "get_i64 from f64", nfail, ntot)
+
+	! get_i64 missing key with found
+	i64 = json%get_i64('/z', found)
+	TEST(.not. found, "get_i64 missing key: found=.false.", nfail, ntot)
+	TEST(i64 == 0_8, "get_i64 missing key: returns 0", nfail, ntot)
+
+	! get_i64 type mismatch with found (no error)
+	i64 = json%get_i64('/s', found)
+	TEST(.not. found, "get_i64 type mismatch: found=.false.", nfail, ntot)
+	TEST(json%diagnostics%len == 0, "get_i64 type mismatch: no error with found", nfail, ntot)
+
+	! get_i64 type mismatch without found (pushes error)
+	call json%read_str('{"s": "hello"}')
+	i64 = json%get_i64('/s')
+	TEST(err_matches(json, 'type mismatch'), "get_i64 type mismatch: error pushed", nfail, ntot)
+	TEST(err_matches(json, 'expected i64'), "get_i64 type mismatch: error says i64", nfail, ntot)
+
+	! get_f64
+	call json%read_str('{"i": 10, "f": 2.5}')
+	f64 = json%get_f64('/f')
+	TEST(abs(f64 - 2.5d0) <= TOL, "get_f64 happy path", nfail, ntot)
+
+	! get_f64 from i64 (auto-convert)
+	f64 = json%get_f64('/i')
+	TEST(abs(f64 - 10.d0) <= TOL, "get_f64 from i64", nfail, ntot)
+
+	! get_f64 missing key with found
+	f64 = json%get_f64('/z', found)
+	TEST(.not. found, "get_f64 missing: found=.false.", nfail, ntot)
+
+	! get_str
+	call json%read_str('{"s": "world"}')
+	str = json%get_str('/s')
+	TEST(is_str_eq(str, "world"), "get_str happy path", nfail, ntot)
+
+	str = json%get_str('/z', found)
+	TEST(.not. found, "get_str missing: found=.false.", nfail, ntot)
+	TEST(is_str_eq(str, ""), "get_str missing: returns empty string", nfail, ntot)
+
+	! get_bool
+	call json%read_str('{"t": true, "f": false}')
+	bool = json%get_bool('/t')
+	TEST(bool, "get_bool true", nfail, ntot)
+
+	bool = json%get_bool('/f')
+	TEST(.not. bool, "get_bool false", nfail, ntot)
+
+	bool = json%get_bool('/z', found)
+	TEST(.not. found, "get_bool missing: found=.false.", nfail, ntot)
+
+	!===========================================================================
+	! Phase 5: vector getters
+	!===========================================================================
+
+	! get_vec_i64 happy path
+	call json%read_str('{"v": [10, 20, 30]}')
+	vec_i64 = json%get_vec_i64('/v')
+	TEST(size(vec_i64) == 3, "get_vec_i64 size", nfail, ntot)
+	TEST(vec_i64(1) == 10_8, "get_vec_i64 element 1", nfail, ntot)
+	TEST(vec_i64(2) == 20_8, "get_vec_i64 element 2", nfail, ntot)
+	TEST(vec_i64(3) == 30_8, "get_vec_i64 element 3", nfail, ntot)
+
+	! get_vec_i64 with i64/f64 mix (auto-convert)
+	call json%read_str('[1, 2.0, 3]')
+	vec_i64 = json%get_vec_i64('')
+	TEST(size(vec_i64) == 3, "get_vec_i64 i64/f64 mix size", nfail, ntot)
+	TEST(vec_i64(2) == 2_8, "get_vec_i64 f64 element auto-converted", nfail, ntot)
+
+	! get_vec_i64 empty array
+	call json%read_str('[]')
+	vec_i64 = json%get_vec_i64('')
+	TEST(size(vec_i64) == 0, "get_vec_i64 empty array", nfail, ntot)
+
+	! get_vec_i64 missing key with found
+	call json%read_str('{"a":1}')
+	vec_i64 = json%get_vec_i64('/z', found)
+	TEST(.not. found, "get_vec_i64 missing: found=.false.", nfail, ntot)
+
+	! get_vec_i64 type mismatch with found (mixed types in array)
+	call json%read_str('[1, "oops", 3]')
+	vec_i64 = json%get_vec_i64('', found)
+	TEST(.not. found, "get_vec_i64 mixed types: found=.false.", nfail, ntot)
+	TEST(size(vec_i64) == 0, "get_vec_i64 mixed types: returns empty", nfail, ntot)
+
+	! get_vec_f64
+	call json%read_str('[1.1, 2.2, 3.3]')
+	vec_f64 = json%get_vec_f64('')
+	TEST(size(vec_f64) == 3, "get_vec_f64 size", nfail, ntot)
+	TEST(abs(vec_f64(1) - 1.1d0) <= TOL, "get_vec_f64 element 1", nfail, ntot)
+	TEST(abs(vec_f64(3) - 3.3d0) <= TOL, "get_vec_f64 element 3", nfail, ntot)
+
+	! get_vec_f64 with i64 elements (auto-convert)
+	call json%read_str('[1, 2, 3]')
+	vec_f64 = json%get_vec_f64('')
+	TEST(abs(vec_f64(1) - 1.d0) <= TOL, "get_vec_f64 from i64", nfail, ntot)
+
+	! get_vec_bool
+	call json%read_str('[true, false, true]')
+	vec_bool = json%get_vec_bool('')
+	TEST(size(vec_bool) == 3, "get_vec_bool size", nfail, ntot)
+	TEST(vec_bool(1), "get_vec_bool element 1", nfail, ntot)
+	TEST(.not. vec_bool(2), "get_vec_bool element 2", nfail, ntot)
+
+	! get_vec_str
+	call json%read_str('["hello", "world"]')
+	vec_str = json%get_vec_str('')
+	TEST(size(vec_str) == 2, "get_vec_str size", nfail, ntot)
+	TEST(is_str_eq(vec_str(1)%str, "hello"), "get_vec_str element 1", nfail, ntot)
+	TEST(is_str_eq(vec_str(2)%str, "world"), "get_vec_str element 2", nfail, ntot)
+
+	! get_vec_str missing key with found
+	call json%read_str('{"a":1}')
+	vec_str = json%get_vec_str('/z', found)
+	TEST(.not. found, "get_vec_str missing: found=.false.", nfail, ntot)
+
+	!===========================================================================
+	! Phase 6: matrix getters
+	!===========================================================================
+
+	! get_mat_i64 happy path
+	call json%read_str('[[1,2,3],[4,5,6]]')
+	mat_i64 = json%get_mat_i64('')
+	TEST(size(mat_i64, 1) == 2, "get_mat_i64 nrows", nfail, ntot)
+	TEST(size(mat_i64, 2) == 3, "get_mat_i64 ncols", nfail, ntot)
+	TEST(mat_i64(1,1) == 1_8, "get_mat_i64 (1,1)", nfail, ntot)
+	TEST(mat_i64(1,3) == 3_8, "get_mat_i64 (1,3)", nfail, ntot)
+	TEST(mat_i64(2,1) == 4_8, "get_mat_i64 (2,1)", nfail, ntot)
+	TEST(mat_i64(2,3) == 6_8, "get_mat_i64 (2,3)", nfail, ntot)
+
+	! get_mat_i64 empty outer array
+	call json%read_str('[]')
+	mat_i64 = json%get_mat_i64('', found)
+	TEST(found, "get_mat_i64 empty array: found=.true.", nfail, ntot)
+	TEST(size(mat_i64) == 0, "get_mat_i64 empty array: size 0", nfail, ntot)
+
+	! get_mat_i64 non-uniform rows: found=.false.
+	call json%read_str('[[1,2],[3,4,5]]')
+	mat_i64 = json%get_mat_i64('', found)
+	TEST(.not. found, "get_mat_i64 non-uniform rows: found=.false.", nfail, ntot)
+
+	! get_mat_f64 happy path
+	call json%read_str('[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]')
+	mat_f64 = json%get_mat_f64('')
+	TEST(size(mat_f64, 1) == 3, "get_mat_f64 nrows", nfail, ntot)
+	TEST(size(mat_f64, 2) == 2, "get_mat_f64 ncols", nfail, ntot)
+	TEST(abs(mat_f64(1,1) - 1.d0) <= TOL, "get_mat_f64 (1,1)", nfail, ntot)
+	TEST(abs(mat_f64(3,2) - 6.d0) <= TOL, "get_mat_f64 (3,2)", nfail, ntot)
+
+	! get_mat_f64 i64 elements (auto-convert)
+	call json%read_str('[[1,2],[3,4]]')
+	mat_f64 = json%get_mat_f64('')
+	TEST(abs(mat_f64(2,2) - 4.d0) <= TOL, "get_mat_f64 from i64", nfail, ntot)
+
+	! get_mat_f64 missing with found
+	call json%read_str('{"a":1}')
+	mat_f64 = json%get_mat_f64('/z', found)
+	TEST(.not. found, "get_mat_f64 missing: found=.false.", nfail, ntot)
+
+end subroutine test_get_api
+
 end module jsonf__test
 
 program test
@@ -1427,6 +1658,7 @@ program test
 	call test_in9(nfail, ntot)
 	call test_errs(nfail, ntot)
 	call test_file_errs(nfail, ntot)
+	call test_get_api(nfail, ntot)
 
 	if (nfail == 0) then
 		write(*, "(a,i0,a)") fg_bold // fg_green // " All ", ntot, " tests passed " // color_reset
