@@ -4,6 +4,8 @@ module jsonf
 	use jsonf__utils
 	implicit none
 
+	private :: type_name, decode_ptr_key
+
 	! TODO:
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
 	!   other options, e.g. error_trailing_commas, require leading digit before
@@ -1101,6 +1103,38 @@ function get_val_json(json, ptr, found) result(val)
 
 end function get_val_json
 
+function decode_ptr_key(ptr, i0, i) result(key)
+	! Extract and RFC 6901 decode the path segment ptr(i0+1:i-1):
+	! ~1 -> '/', ~0 -> '~' (in that order, per spec)
+	character(len=*), intent(in) :: ptr
+	integer, intent(in) :: i0, i
+	character(len=:), allocatable :: key
+	!********
+	integer :: j, k
+	key = ptr(i0+1: i-1)  ! over-allocate
+	j = i0
+	k = 1
+	do while (j < i-1)
+		j = j + 1
+		if (j+1 <= len(ptr)) then
+			if (ptr(j:j+1) == "~0") then
+				key(k:k) = '~'
+				k = k + 1
+				j = j + 1
+				cycle
+			else if (ptr(j:j+1) == "~1") then
+				key(k:k) = '/'
+				k = k + 1
+				j = j + 1
+				cycle
+			end if
+		end if
+		key(k:k) = ptr(j:j)
+		k = k + 1
+	end do
+	key = key(1:k-1)
+end function decode_ptr_key
+
 recursive subroutine resolve_copy(json, val, ptr, i0, outval, found, silent)
 	! Walk path ptr[i0:] through val; copy the target node into outval.
 	! When silent=.true., path-not-found and index errors are suppressed.
@@ -1113,7 +1147,7 @@ recursive subroutine resolve_copy(json, val, ptr, i0, outval, found, silent)
 	logical, intent(in) :: silent
 	!********
 	character(len=:), allocatable :: key, closest, err
-	integer :: i, j, k, io
+	integer :: i, io
 	integer(kind=4) :: idx
 
 	found = .false.
@@ -1144,28 +1178,7 @@ recursive subroutine resolve_copy(json, val, ptr, i0, outval, found, silent)
 	!   incorrect (the string '~01' correctly becomes '~1' after
 	!   transformation).
 
-	key = ptr(i0+1: i-1)  ! over-allocate
-	j = i0
-	k = 1
-	do while (j < i-1)
-		j = j + 1
-		if (j+1 <= len(ptr)) then
-			if (ptr(j:j+1) == "~0") then
-				key(k:k) = '~'
-				k = k + 1
-				j = j + 1
-				cycle
-			else if (ptr(j:j+1) == "~1") then
-				key(k:k) = '/'
-				k = k + 1
-				j = j + 1
-				cycle
-			end if
-		end if
-		key(k:k) = ptr(j:j)
-		k = k + 1
-	end do
-	key = key(1:k-1)
+	key = decode_ptr_key(ptr, i0, i)
 
 	select case (val%type)
 	case (OBJ_TYPE)
@@ -1214,7 +1227,7 @@ recursive subroutine path_meta(val, ptr, i0, found, val_type, narr, nkeys)
 	integer, intent(out) :: val_type, narr, nkeys
 	!********
 	character(len=:), allocatable :: key
-	integer :: i, j, k, io
+	integer :: i, io
 	integer(kind=4) :: idx
 
 	found = .false.
@@ -1237,28 +1250,7 @@ recursive subroutine path_meta(val, ptr, i0, found, val_type, narr, nkeys)
 		i = i + 1
 	end do
 
-	key = ptr(i0+1: i-1)
-	j = i0
-	k = 1
-	do while (j < i-1)
-		j = j + 1
-		if (j+1 <= len(ptr)) then
-			if (ptr(j:j+1) == "~0") then
-				key(k:k) = '~'
-				k = k + 1
-				j = j + 1
-				cycle
-			else if (ptr(j:j+1) == "~1") then
-				key(k:k) = '/'
-				k = k + 1
-				j = j + 1
-				cycle
-			end if
-		end if
-		key(k:k) = ptr(j:j)
-		k = k + 1
-	end do
-	key = key(1:k-1)
+	key = decode_ptr_key(ptr, i0, i)
 
 	select case (val%type)
 	case (OBJ_TYPE)
@@ -2153,6 +2145,7 @@ function get_i64_json(json, ptr, found) result(val)
 	case (I64_TYPE)
 		val = node%sca%i64
 		if (present(found)) found = .true.
+	! Auto-convert: truncates toward zero (e.g. 3.14 -> 3)
 	case (F64_TYPE)
 		val = int(node%sca%f64, 8)
 		if (present(found)) found = .true.
@@ -2306,6 +2299,7 @@ function get_vec_i64_json(json, ptr, found) result(val)
 		select case (node%arr(i)%type)
 		case (I64_TYPE)
 			val(i) = node%arr(i)%sca%i64
+		! Auto-convert: truncates toward zero (e.g. 3.14 -> 3)
 		case (F64_TYPE)
 			val(i) = int(node%arr(i)%sca%f64, 8)
 		case default
@@ -2535,6 +2529,7 @@ function get_mat_i64_json(json, ptr, found) result(val)
 	ncols = node%arr(1)%narr
 	deallocate(val)
 	allocate(val(node%narr, ncols))
+	! Pass 1: validate row types and lengths
 	do i = 1, node%narr
 		if (node%arr(i)%type /= ARR_TYPE) then
 			deallocate(val)
@@ -2564,10 +2559,14 @@ function get_mat_i64_json(json, ptr, found) result(val)
 			end if
 			return
 		end if
-		do j = 1, ncols
+	end do
+	! Pass 2: fill column-major (i varies fastest, stride-1 in Fortran)
+	do j = 1, ncols
+		do i = 1, node%narr
 			select case (node%arr(i)%arr(j)%type)
 			case (I64_TYPE)
 				val(i, j) = node%arr(i)%arr(j)%sca%i64
+			! Auto-convert: truncates toward zero (e.g. 3.14 -> 3)
 			case (F64_TYPE)
 				val(i, j) = int(node%arr(i)%arr(j)%sca%f64, 8)
 			case default
@@ -2638,6 +2637,7 @@ function get_mat_f64_json(json, ptr, found) result(val)
 	ncols = node%arr(1)%narr
 	deallocate(val)
 	allocate(val(node%narr, ncols))
+	! Pass 1: validate row types and lengths
 	do i = 1, node%narr
 		if (node%arr(i)%type /= ARR_TYPE) then
 			deallocate(val)
@@ -2667,7 +2667,10 @@ function get_mat_f64_json(json, ptr, found) result(val)
 			end if
 			return
 		end if
-		do j = 1, ncols
+	end do
+	! Pass 2: fill column-major (i varies fastest, stride-1 in Fortran)
+	do j = 1, ncols
+		do i = 1, node%narr
 			select case (node%arr(i)%arr(j)%type)
 			case (F64_TYPE)
 				val(i, j) = node%arr(i)%arr(j)%sca%f64
