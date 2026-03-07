@@ -58,7 +58,7 @@ module jsonf
 
 	integer, parameter :: &
 		JSONF_MAJOR = 0, &  ! Note: update version in fpm.toml too
-		JSONF_MINOR = 2, &
+		JSONF_MINOR = 4, &
 		JSONF_PATCH = 0
 
 	integer, parameter :: DEBUG = 0
