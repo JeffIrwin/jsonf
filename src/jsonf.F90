@@ -890,9 +890,8 @@ subroutine write_json(json, filename, unit_)
 
 end subroutine write_json
 
-subroutine json_print_errors(json, msg)
+subroutine json_print_errors(json)
 	class(json_t) :: json
-	character(len=*), intent(in), optional :: msg
 	!********
 	integer :: i
 	integer, parameter :: unit_ = OUTPUT_UNIT  ! opt arg?
