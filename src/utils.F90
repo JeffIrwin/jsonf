@@ -294,8 +294,8 @@ function read_file(file, iostat) result(str)
 		read(iu, iostat = io) str
 		if (io == IOSTAT_END) io = EXIT_SUCCESS
 	else
-		! TODO: does this mean the file exists and is empty? Should we return
-		! unallocated str as-is or an empty str instead?
+		! str is already allocated with len=0 (from the allocate above).
+		! The parser will handle the empty-content case naturally.
 		io = EXIT_SUCCESS
 	end if
 	close(iu)

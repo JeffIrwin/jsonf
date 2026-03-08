@@ -200,7 +200,7 @@ module jsonf
 
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
 		character     :: current_char
-		type(token_t) :: current_token, previous_token
+		type(token_t), allocatable :: current_token, previous_token
 
 		logical :: &
 			error_numbers            = .false., &
@@ -339,22 +339,10 @@ end subroutine lexer_next_char
 
 subroutine lexer_next_token(lexer)
 	! Advance to the next token. Whitespace is skipped inside lex() itself.
-	! Use move_alloc to transfer previous_token's allocatable strings without copying.
+	! move_alloc the whole token struct since both are allocatable.
 	class(lexer_t), intent(inout) :: lexer
 	!********
-
-	! TODO: can we make the whole previous_token/current_token members
-	! allocatable to move all at once instead of move/copy individual
-	! sub-sub-members?
-	lexer%previous_token%kind     = lexer%current_token%kind
-	lexer%previous_token%line     = lexer%current_token%line
-	lexer%previous_token%col      = lexer%current_token%col
-	lexer%previous_token%sca%type = lexer%current_token%sca%type
-	lexer%previous_token%sca%bool = lexer%current_token%sca%bool
-	lexer%previous_token%sca%i64  = lexer%current_token%sca%i64
-	lexer%previous_token%sca%f64  = lexer%current_token%sca%f64
-	call move_alloc(lexer%current_token%sca%str, lexer%previous_token%sca%str)
-	call move_alloc(lexer%current_token%text,    lexer%previous_token%text)
+	call move_alloc(lexer%current_token, lexer%previous_token)
 	lexer%current_token = lexer%lex()
 end subroutine lexer_next_token
 
@@ -387,7 +375,7 @@ function lex(lexer) result(token)
 	character(len=:), allocatable :: text, text_strip, reason
 	integer :: l0, c0
 	integer(kind=8) :: i64
-	logical :: float_, is_valid
+	logical :: float_, has_under, is_valid
 	real(kind=8) :: f64
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
@@ -421,6 +409,7 @@ function lex(lexer) result(token)
 		! You'll never have to parse arithmetic like `1+2` in json, unlike
 		! syntran
 		float_ = .false.
+		has_under = .false.
 		sb = new_str_builder()
 		if (is_sign(lexer%current_char)) then
 			call sb%push(lexer%current_char)
@@ -428,16 +417,13 @@ function lex(lexer) result(token)
 		end if
 		do while (is_float_under(lexer%current_char))
 			float_ = float_ .or. .not. is_digit_under(lexer%current_char)
+			has_under = has_under .or. lexer%current_char == '_'
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
 
 		text = sb%trim()
-		! TODO: instead of calling index() here, just check for underscores
-		! above in while loop. Could also micro-optimize dD -> eE conversion (if
-		! allowed by config) above instead of making an extra copy in
-		! parse_f64()
-		if (index(text, "_") > 0) then
+		if (has_under) then
 			text_strip = rm_char(text, "_")
 		else
 			text_strip = text
@@ -453,7 +439,7 @@ function lex(lexer) result(token)
 					! TODO: should warnings be pushed as a diagnostic? It would be nice to underline them in context like errors
 					write(*, "(a)") WARN_STR//"bad number "//quote(text)//" ("//reason//")"
 				else if (lexer%error_numbers) then
-					call err_number(lexer, c0, text, reason)
+					call err_number(lexer, l0, c0, text, reason)
 					token = new_token(BAD_TOKEN, l0, c0, text)
 					return
 				end if
@@ -466,7 +452,7 @@ function lex(lexer) result(token)
 				sca   = new_literal(F64_TYPE, f64 = f64)
 				token = new_token(F64_TOKEN, l0, c0, text, sca)
 			else
-				call err_float(lexer, c0, text)
+				call err_float(lexer, l0, c0, text)
 				token = new_token(BAD_TOKEN, l0, c0, text)
 				return
 			end if
@@ -481,7 +467,7 @@ function lex(lexer) result(token)
 					sca   = new_literal(F64_TYPE, f64 = f64)
 					token = new_token(F64_TOKEN, l0, c0, text, sca)
 				else
-					call err_integer(lexer, c0, text)
+					call err_integer(lexer, l0, c0, text)
 					token = new_token(BAD_TOKEN, l0, c0, text)
 					return
 				end if
@@ -769,6 +755,7 @@ function new_lexer(stream, json) result(lexer)
 	end if
 
 	lexer%current_token = lexer%lex()
+	allocate(lexer%previous_token)
 
 end function new_lexer
 
@@ -1531,9 +1518,9 @@ subroutine err_arr_delim(lexer)
 
 end subroutine err_arr_delim
 
-subroutine err_number(lexer, start, number_text, reason)
+subroutine err_number(lexer, line, start, number_text, reason)
 	type(lexer_t), intent(inout) :: lexer
-	integer, intent(in) :: start
+	integer, intent(in) :: line, start
 	character(len=*), intent(in) :: number_text, reason
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1543,16 +1530,16 @@ subroutine err_number(lexer, start, number_text, reason)
 		'bad number format: ' // number_text // ' (' // reason // ')'
 
 	length  = len(number_text)
-	context = underline(lexer, start, length)
+	context = underline(lexer, start, length, line)
 	summary = fg_bright_red//" bad number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
 
 end subroutine err_number
 
-subroutine err_float(lexer, start, number_text)
+subroutine err_float(lexer, line, start, number_text)
 	type(lexer_t), intent(inout) :: lexer
-	integer, intent(in) :: start
+	integer, intent(in) :: line, start
 	character(len=*), intent(in) :: number_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1562,16 +1549,16 @@ subroutine err_float(lexer, start, number_text)
 		'bad floating-point number format: ' // number_text
 
 	length  = len(number_text)
-	context = underline(lexer, start, length)
+	context = underline(lexer, start, length, line)
 	summary = fg_bright_red//" bad float number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
 
 end subroutine err_float
 
-subroutine err_integer(lexer, start, number_text)
+subroutine err_integer(lexer, line, start, number_text)
 	type(lexer_t), intent(inout) :: lexer
-	integer, intent(in) :: start
+	integer, intent(in) :: line, start
 	character(len=*), intent(in) :: number_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1581,7 +1568,7 @@ subroutine err_integer(lexer, start, number_text)
 		'bad integer number format: ' // number_text
 
 	length  = len(number_text)
-	context = underline(lexer, start, length)
+	context = underline(lexer, start, length, line)
 	summary = fg_bright_red//" bad integer number"//color_reset
 
 	call lexer%push_err(descr, context, summary)

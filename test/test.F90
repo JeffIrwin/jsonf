@@ -1412,6 +1412,12 @@ subroutine test_file_errs(nfail, ntot)
 	TEST(err_matches(json, under ), "file under: "//expect, nfail, ntot)
 	json%error_duplicate_keys = .false.
 
+	call json%read_file("data/errs/empty.json")
+	expect = "unexpected token"
+	place  = "data/errs/empty.json:1:1"
+	TEST(err_matches(json, expect), "file diag : empty file", nfail, ntot)
+	TEST(err_matches(json, place ), "file place: empty file", nfail, ntot)
+
 end subroutine test_file_errs
 
 logical function err_matches(json, msg)
