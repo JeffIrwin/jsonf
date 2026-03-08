@@ -26,6 +26,9 @@ ADD . .
 RUN fpm test
 RUN fpm test --profile debug
 RUN fpm test --profile release
+RUN fpm run --example
+RUN fpm run --example --profile debug
+RUN fpm run --example --profile release
 ARG JSONF="./build/bin/jsonf"
 
 RUN fpm install --prefix build --profile debug

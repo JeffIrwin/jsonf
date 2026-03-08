@@ -257,7 +257,7 @@ end program example
 ## Building from source
 
 ```bash
-fpm build                    # debug build
+fpm build                    # default build
 fpm build --profile release  # release build
 fpm test                     # run all tests
 ```
