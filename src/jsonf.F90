@@ -27,6 +27,7 @@ module jsonf
 	!   * name strict, pedantic, -Wall or -Werror
 	!   * probably keep error_duplicate_keys orthogonal to this since standard
 	!     allows dupes
+	!   * maybe `--extra-strict` to also ban dupes
 	! - expose less
 	!   * move as many implementation details as possible into something like
 	!     private.F90
@@ -34,7 +35,7 @@ module jsonf
 	!   * and/or, declare individual routines as `private`, though I'd prefer a
 	!     separate file. time to split anyway
 	! - test in other projects
-	!   * aoc-fortran pips solver
+	!   * aoc-fortran pips solver -- done
 	!   * ribbit?
 	! - spellcheck for bad cmd args
 	!   * bad keys done
@@ -52,13 +53,16 @@ module jsonf
 	!   * cmake
 	!     + an auto-generate cmake list has been added
 	! - benchmark performance
+	!   * it's on par with json-fortran -- faster than native-fortran
+	!     json-fortran but slower than json-fortran with c string-to-number
+	!     conversion
+	!   * also try an object-heavy benchmark, like canada.json but with more
+	!     objects instead of arrays
 	! - cmd args:
 	!   * stdin option, if no other opt given, or maybe with explicit ` - ` arg
 	!   * hashed_order option
 	!   * stop-on-error on "assert". need better error handling first
 	! - check json-fortran, jq, and other similar projects for features to add
-	! - test re-entry with re-using one object to load multiple JSON inputs in
-	!   sequence. might find bugs with things that need to be deallocated first
 	! - test large files
 	! - test unicode in strings
 	!   * note that hex literals can be part of a unicode sequence in JSON, but
