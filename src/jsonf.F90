@@ -1294,7 +1294,11 @@ subroutine parse_arr(json, lexer, arr)
 			if (lexer%val_stack_top > size(lexer%val_stack)) then
 				call grow_val_stack(lexer)
 			end if
-			call parse_val(json, lexer, lexer%val_stack(lexer%val_stack_top))
+			block
+				type(json_val_t) :: val
+				call parse_val(json, lexer, val)
+				call move_val(val, lexer%val_stack(lexer%val_stack_top))
+			end block
 		else
 			block
 				type(json_val_t) :: val
