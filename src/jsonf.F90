@@ -9,10 +9,6 @@ module jsonf
 	private :: type_name, decode_ptr_key
 
 	! TODO:
-	! - the val_stack is a nice perf optimization to avoid reallocation churn
-	!   while parsing arrays. can we make a similar optimization for objects?
-	!   hash map implementation is inlined anyway so it wouldn't hurt to make it
-	!   even more special-purpose
 	! - add a way to get an array of the keys of an obj?
 	!   * either that or some other way to iterate over an obj, like accessing
 	!     by int index. together with %len(), iteration could be performed
@@ -189,6 +185,12 @@ module jsonf
 
 		type(json_val_t), allocatable :: val_stack(:)
 		integer :: val_stack_top = 0
+
+		type(str_t), allocatable :: key_stack(:)
+		integer :: key_stack_top = 0
+		integer, allocatable :: key_line_stack(:)
+		integer, allocatable :: key_col_stack(:)
+		integer, allocatable :: key_len_stack(:)
 
 		contains
 			procedure :: &
@@ -724,6 +726,12 @@ function new_lexer(str, json, src_file) result(lexer)
 	! initial stack size. If it's ever updated, the test should be too
 	allocate(lexer%val_stack(64))
 	lexer%val_stack_top = 0
+
+	allocate(lexer%key_stack(64))
+	allocate(lexer%key_line_stack(64))
+	allocate(lexer%key_col_stack(64))
+	allocate(lexer%key_len_stack(64))
+	lexer%key_stack_top = 0
 
 	! Get the first char and token on construction instead of checking later if
 	! we have them. Column starts initially at 1
@@ -1364,9 +1372,7 @@ subroutine parse_obj(json, lexer, obj)
 	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key, descr, context, summary
-	integer, parameter :: INIT_SIZE = 2
-	integer :: key_line, key_col, key_len
-	type(json_val_t) :: val
+	integer :: key_base, val_base, count, map_size, i
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
 
@@ -1374,41 +1380,49 @@ subroutine parse_obj(json, lexer, obj)
 	call lexer%match(LBRACE_TOKEN)
 	if (.not. lexer%is_ok) return
 	obj%type = OBJ_TYPE
-
-	! Initialize hash map storage
-	allocate(obj%keys(INIT_SIZE))
-	allocate(obj%vals(INIT_SIZE))
-	allocate(obj%idx (INIT_SIZE))
 	obj%nkeys = 0
+
+	key_base = lexer%key_stack_top
+	val_base = lexer%val_stack_top
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) exit
 
 		call lexer%match(STR_TOKEN)
 		if (.not. lexer%is_ok) return
-		key      = lexer%previous_token%sca%str
-		key_line = lexer%previous_token%line
-		key_col  = lexer%previous_token%col
-		key_len  = len(lexer%previous_token%text)
-		!print *, "key = ", key
+
+		! Push key and position info onto key stack
+		lexer%key_stack_top = lexer%key_stack_top + 1
+		if (lexer%key_stack_top > size(lexer%key_stack)) then
+			call grow_key_stack(lexer)
+		end if
+		lexer%key_stack(lexer%key_stack_top)%str = lexer%previous_token%sca%str
+		lexer%key_line_stack(lexer%key_stack_top) = lexer%previous_token%line
+		lexer%key_col_stack(lexer%key_stack_top)  = lexer%previous_token%col
+		lexer%key_len_stack(lexer%key_stack_top)  = len(lexer%previous_token%text)
 
 		call lexer%match(COLON_TOKEN)
 		if (.not. lexer%is_ok) return
-		call parse_val(json, lexer, val)
-		if (.not. lexer%is_ok) return
-		!print *, "val = ", val%to_str()
 
 		if (.not. json%lint) then
-			! Store the key-value pair in the object
-			call set_map(json, obj, key, val)
-			if (.not. json%is_ok) then
-				descr   = ERROR_STR // 'duplicate key ' // quote(key)
-				context = underline(lexer, key_col, key_len, key_line)
-				summary = fg_bright_red // ' duplicate key' // color_reset
-				call lexer%push_err(descr, context, summary)
-				return
+			! Push a slot onto the val_stack before parsing so recursive
+			! parse_obj/parse_arr starts above this slot
+			lexer%val_stack_top = lexer%val_stack_top + 1
+			if (lexer%val_stack_top > size(lexer%val_stack)) then
+				call grow_val_stack(lexer)
 			end if
+			block
+				type(json_val_t) :: val
+				call parse_val(json, lexer, val)
+				call move_val(val, lexer%val_stack(lexer%val_stack_top))
+			end block
+		else
+			block
+				type(json_val_t) :: val
+				call parse_val(json, lexer, val)
+			end block
 		end if
+		if (.not. lexer%is_ok) return
 
 		select case (lexer%current_kind())
 		case (COMMA_TOKEN)
@@ -1420,8 +1434,6 @@ subroutine parse_obj(json, lexer, obj)
 			return
 		end select
 	end do
-	!print *, "current  = ", kind_name(lexer%current_kind())
-	!print *, "previous = ", kind_name(lexer%previous_token%kind)
 
 	if (lexer%previous_token%kind == COMMA_TOKEN) then
 		if (json%error_trailing_commas) then
@@ -1435,12 +1447,30 @@ subroutine parse_obj(json, lexer, obj)
 	call lexer%match(RBRACE_TOKEN)
 	if (.not. lexer%is_ok) return
 
-	! We might be able to deallocate obj%idx(:) here if no duplicate keys were
-	! found. However, memory savings aren't that much -- every key and val takes
-	! up more memory than an idx. Also it would be fine with current read-once
-	! architecture, but if we expose an API to modify JSON after reading, new
-	! duplicate keys might get inserted even if the object originally had unique
-	! keys
+	if (.not. json%lint) then
+		! Allocate hash map at exact size (load factor <= 0.5) and bulk-insert
+		count    = lexer%key_stack_top - key_base
+		map_size = max(2, count * 2)
+		allocate(obj%keys(map_size))
+		allocate(obj%vals(map_size))
+		allocate(obj%idx (map_size))
+		do i = 1, count
+			key = lexer%key_stack(key_base + i)%str
+			call set_map_core(json, obj, key, lexer%val_stack(val_base + i))
+			if (.not. json%is_ok) then
+				descr   = ERROR_STR // 'duplicate key ' // quote(key)
+				context = underline(lexer, &
+					lexer%key_col_stack(key_base + i), &
+					lexer%key_len_stack(key_base + i), &
+					lexer%key_line_stack(key_base + i))
+				summary = fg_bright_red // ' duplicate key' // color_reset
+				call lexer%push_err(descr, context, summary)
+				return
+			end if
+		end do
+		lexer%key_stack_top = key_base
+		lexer%val_stack_top = val_base
+	end if
 
 	if (DEBUG > 0) then
 		write(*,*) "Finished parse_obj(), nkeys = "//to_str(obj%nkeys)
@@ -1894,6 +1924,27 @@ subroutine grow_val_stack(lexer)
 	end do
 	deallocate(old)
 end subroutine grow_val_stack
+
+subroutine grow_key_stack(lexer)
+	type(lexer_t), intent(inout) :: lexer
+	!********
+	integer :: n0
+	type(str_t), allocatable :: old_keys(:)
+	integer, allocatable :: old_line(:), old_col(:), old_len(:)
+	n0 = size(lexer%key_stack)
+	call move_alloc(lexer%key_stack, old_keys)
+	call move_alloc(lexer%key_line_stack, old_line)
+	call move_alloc(lexer%key_col_stack, old_col)
+	call move_alloc(lexer%key_len_stack, old_len)
+	allocate(lexer%key_stack(n0 * 2))
+	allocate(lexer%key_line_stack(n0 * 2))
+	allocate(lexer%key_col_stack(n0 * 2))
+	allocate(lexer%key_len_stack(n0 * 2))
+	lexer%key_stack(1:n0)      = old_keys
+	lexer%key_line_stack(1:n0) = old_line
+	lexer%key_col_stack(1:n0)  = old_col
+	lexer%key_len_stack(1:n0)  = old_len
+end subroutine grow_key_stack
 
 recursive subroutine copy_val(dst, src)
 	! TODO: try to avoid
