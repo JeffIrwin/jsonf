@@ -9,9 +9,6 @@ module jsonf
 	private :: type_name, decode_ptr_key
 
 	! TODO:
-	! - stream_t is over-engineered. claude ended up reading whole files as strs
-	!   anyway for perf. might as well simplify it now. could keep the type
-	!   wrapper but get rid of FILE_STREAM at least
 	! - the val_stack is a nice perf optimization to avoid reallocation churn
 	!   while parsing arrays. can we make a similar optimization for objects?
 	!   hash map implementation is inlined anyway so it wouldn't hurt to make it
@@ -37,13 +34,6 @@ module jsonf
 	!   * ribbit?
 	! - spellcheck for bad cmd args
 	!   * bad keys done
-	! - add other stream types
-	!   * stdin
-	!   * network? probably not
-	!   * is streaming worthwhile or does it actually hurt performance? there's
-	!     actually a "lines" str vec of all lines to help with diagnostics, so
-	!     we're saving the whole file in memory now anyway. maybe there's a
-	!     simpler approach
 	! - ci/cd
 	!   * linux done, in docker including on ci/cd
 	!   * test on windows, linux (macos?)
@@ -77,16 +67,6 @@ module jsonf
 		JSONF_PATCH = 0
 
 	integer, parameter :: DEBUG = 0
-
-	type stream_t
-		integer :: type
-		integer :: unit
-		integer(kind=8) :: pos
-		character(len=:), allocatable :: str, src_file
-		logical :: is_eof = .false.
-		contains
-			procedure :: get => get_stream_char
-	end type stream_t
 
 	type sca_t
 		! Scalar value type -- primitive bool, int, float, str, or null, but
@@ -194,7 +174,9 @@ module jsonf
 		integer             :: line, col
 		logical             :: is_ok = .true.  ! error state
 		type(str_vec_t)     :: diagnostics
-		type(stream_t)      :: stream
+		integer(kind=8)                :: pos
+		character(len=:), allocatable  :: str, src_file
+		logical                        :: is_eof = .false.
 
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
 		character     :: current_char
@@ -225,8 +207,6 @@ module jsonf
 		BOOL_TOKEN       = 23, &
 		NULL_TYPE        = 22, &
 		NULL_TOKEN       = 21, &
-		STR_STREAM       = 20, &
-		FILE_STREAM      = 19, &
 		ARR_TYPE         = 18, &
 		OBJ_TYPE         = 17, &
 		STR_TOKEN        = 16, &
@@ -314,17 +294,12 @@ end function parse_i64
 
 subroutine lexer_next_char(lexer)
 	class(lexer_t), intent(inout) :: lexer
-	! Inline STR_STREAM access for performance; file streams fall back to get()
-	if (lexer%stream%type == STR_STREAM) then
-		if (lexer%stream%pos > len(lexer%stream%str)) then
-			lexer%stream%is_eof = .true.
-			lexer%current_char = NULL_CHAR
-		else
-			lexer%current_char = lexer%stream%str(lexer%stream%pos:lexer%stream%pos)
-			lexer%stream%pos = lexer%stream%pos + 1
-		end if
+	if (lexer%pos > len(lexer%str)) then
+		lexer%is_eof = .true.
+		lexer%current_char = NULL_CHAR
 	else
-		lexer%current_char = lexer%stream%get()
+		lexer%current_char = lexer%str(lexer%pos:lexer%pos)
+		lexer%pos = lexer%pos + 1
 	end if
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
@@ -385,7 +360,7 @@ function lex(lexer) result(token)
 
 	l0 = lexer%line
 	c0 = lexer%col
-	if (lexer%stream%is_eof) then
+	if (lexer%is_eof) then
 		token = new_token(EOF_TOKEN, lexer%line, lexer%col, NULL_CHAR)
 		return
 	end if
@@ -493,7 +468,7 @@ function lex(lexer) result(token)
 			end if
 			call sb%push(lexer%current_char)
 
-			if (lexer%current_char == '"' .or. lexer%stream%is_eof) then
+			if (lexer%current_char == '"' .or. lexer%is_eof) then
 				exit
 			end if
 
@@ -501,7 +476,7 @@ function lex(lexer) result(token)
 		end do
 		text = sb%trim()
 
-		if (lexer%stream%is_eof) then
+		if (lexer%is_eof) then
 			! Unterminated string
 			token = new_token(BAD_TOKEN, l0, c0, text)
 			call err_unterminated_str(lexer, l0, c0, text)
@@ -722,10 +697,11 @@ function new_token(kind, line, col, text, sca) result(token)
 
 end function new_token
 
-function new_lexer(stream, json) result(lexer)
-	type(stream_t) :: stream
-	type(lexer_t) :: lexer
+function new_lexer(str, json, src_file) result(lexer)
+	character(len=*), intent(in) :: str
 	type(json_t), optional :: json
+	character(len=*), intent(in), optional :: src_file
+	type(lexer_t) :: lexer
 	!********
 
 	if (present(json)) then
@@ -736,7 +712,13 @@ function new_lexer(stream, json) result(lexer)
 
 	lexer%line = 1
 	lexer%diagnostics = new_str_vec()
-	lexer%stream = stream
+	lexer%str = str
+	lexer%pos = 1
+	if (present(src_file)) then
+		lexer%src_file = src_file
+	else
+		lexer%src_file = "<string>"
+	end if
 
 	! Note that the unit test for data/in10.json is designed to just exceed this
 	! initial stack size. If it's ever updated, the test should be too
@@ -745,7 +727,13 @@ function new_lexer(stream, json) result(lexer)
 
 	! Get the first char and token on construction instead of checking later if
 	! we have them. Column starts initially at 1
-	lexer%current_char = lexer%stream%get()
+	if (lexer%pos > len(lexer%str)) then
+		lexer%is_eof = .true.
+		lexer%current_char = NULL_CHAR
+	else
+		lexer%current_char = lexer%str(lexer%pos:lexer%pos)
+		lexer%pos = lexer%pos + 1
+	end if
 	lexer%col = 1
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
@@ -761,11 +749,9 @@ subroutine read_file_json(json, filename)
 	class(json_t) :: json
 	character(len=*), intent(in) :: filename
 	!********
-	type(stream_t) :: stream
 	character(len=:), allocatable :: src
 	integer :: io
 
-	! Bulk-read entire file into memory, then parse as a string stream
 	src = read_file(filename, io)
 	if (io /= EXIT_SUCCESS) then
 		call json%diagnostics%push(ERROR_STR//"can't open file "//quote(filename))
@@ -775,59 +761,20 @@ subroutine read_file_json(json, filename)
 		end if
 		return
 	end if
-	stream = new_str_stream(src)
-	stream%src_file = filename
-	call json%parse(stream)
+	call json%parse(src, filename)
 
 end subroutine read_file_json
 
 subroutine read_str_json(json, str)
 	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: str
-	!********
-	type(stream_t) :: stream
-
-	! We have the whole str, but treat it as a stream for consistency with file
-	! streaming
-	stream = new_str_stream(str)
-	call json%parse(stream)
-
+	call json%parse(str)
 end subroutine read_str_json
 
-character function get_stream_char(stream) result(c)
-	class(stream_t) :: stream
-	!********
-	integer :: io
-	select case (stream%type)
-	case (FILE_STREAM)
-		!print *, "reading stream unit "//to_str(stream%unit)
-		read(stream%unit, iostat = io) c
-		if (io == IOSTAT_END) then
-			stream%is_eof = .true.
-			c = NULL_CHAR
-			return
-		end if
-		!print *, "c = ", quote(c)
-
-	case (STR_STREAM)
-		!print *, "getting str stream pos "//to_str(stream%pos)
-		if (stream%pos > len(stream%str)) then
-			stream%is_eof = .true.
-			c = NULL_CHAR
-			return
-		end if
-		c = stream%str(stream%pos:stream%pos)
-		!print *, "c = ", quote(c)
-		stream%pos = stream%pos + 1
-
-	case default
-		call panic("stream type not implemented")
-	end select
-end function get_stream_char
-
-subroutine parse_json(json, stream)
+subroutine parse_json(json, str, src_file)
 	class(json_t), intent(inout) :: json
-	type(stream_t) :: stream
+	character(len=*), intent(in) :: str
+	character(len=*), intent(in), optional :: src_file
 	!********
 	type(lexer_t) :: lexer
 	integer :: i
@@ -836,7 +783,11 @@ subroutine parse_json(json, stream)
 	json%is_ok = .true.
 	json%diagnostics = new_str_vec()
 
-	lexer = new_lexer(stream, json)
+	if (present(src_file)) then
+		lexer = new_lexer(str, json, src_file)
+	else
+		lexer = new_lexer(str, json)
+	end if
 	call parse_val(json, lexer, json%root)
 
 	! Append lexer diagnostics into json (json may already have e.g. duplicate key errors)
@@ -1661,26 +1612,26 @@ subroutine err_trailing_comma(lexer, context_name)
 
 end subroutine err_trailing_comma
 
-function get_source_line(stream, line_num) result(line)
+function get_source_line(src, line_num) result(line)
 	! Extract line line_num (1-indexed) from the in-memory source string
-	type(stream_t), intent(in) :: stream
+	character(len=*), intent(in) :: src
 	integer, intent(in) :: line_num
 	character(len=:), allocatable :: line
 	!********
 	integer :: i, current_line, line_start, n
 
-	if (.not. allocated(stream%str)) then
+	if (len(src) == 0) then
 		line = ""
 		return
 	end if
 
-	n = len(stream%str)
+	n = len(src)
 	current_line = 1
 	line_start   = 1
 	do i = 1, n
-		if (stream%str(i:i) == LINE_FEED) then
+		if (src(i:i) == LINE_FEED) then
 			if (current_line == line_num) then
-				line = stream%str(line_start: i - 1)
+				line = src(line_start: i - 1)
 				return
 			end if
 			current_line = current_line + 1
@@ -1689,7 +1640,7 @@ function get_source_line(stream, line_num) result(line)
 	end do
 	! Last line (no trailing newline)
 	if (current_line == line_num) then
-		line = stream%str(line_start: n)
+		line = src(line_start: n)
 	else
 		line = ""
 	end if
@@ -1733,12 +1684,12 @@ function underline(lexer, start, length, line_)
 	end if
 
 	! Extract the requested source line on demand from the in-memory source string
-	text = tabs_to_spaces(get_source_line(lexer%stream, line_idx))
+	text = tabs_to_spaces(get_source_line(lexer%str, line_idx))
 
 	! Pad spaces the same length as the line number string
 	spaces = repeat(' ', len(line_num) + 2)
 
-	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
+	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%src_file &
 		//":"//line_num//":"//to_str(start)//LINE_FEED &
 		//fg1//     spaces//"| "//LINE_FEED &
 		//fg1//" "//line_num//" | "//rst//text//LINE_FEED &
@@ -1981,50 +1932,18 @@ recursive subroutine copy_val(dst, src)
 
 end subroutine copy_val
 
-function new_file_stream(filename, io_status) result(stream)
-	character(len=*), intent(in) :: filename
-	integer, intent(out), optional :: io_status
-	type(stream_t) :: stream
-	!********
-	integer :: io
-	stream%type = FILE_STREAM
-	stream%src_file = filename
-	open(file = filename, newunit = stream%unit, action = "read", access = "stream", iostat = io)
-	!print *, "opened stream unit "//to_str(stream%unit)
-	if (present(io_status)) then
-		io_status = io
-	else if (io /= EXIT_SUCCESS) then
-		call panic("can't open file "//quote(filename))
-	end if
-end function new_file_stream
-
-function new_str_stream(str) result(stream)
-	character(len=*), intent(in) :: str
-	type(stream_t) :: stream
-	!********
-	stream%type = STR_STREAM
-	stream%str = str
-	stream%pos = 1
-	stream%src_file = "<STR_STREAM>"
-end function new_str_stream
-
 subroutine print_file_tokens(filename)
 	character(len=*), intent(in) :: filename
 	!********
-	type(stream_t) :: stream
+	character(len=:), allocatable :: src
 	integer :: io
-	stream = new_file_stream(filename, io)
+	src = read_file(filename, io)
 	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
-	call print_stream_tokens(stream)
+	call print_str_tokens(src)
 end subroutine print_file_tokens
 
 subroutine print_str_tokens(str)
 	character(len=*), intent(in) :: str
-	call print_stream_tokens(new_str_stream(str))
-end subroutine print_str_tokens
-
-subroutine print_stream_tokens(stream)
-	type(stream_t) :: stream
 	!********
 	type(lexer_t) :: lexer
 	type(str_builder_t) :: sb
@@ -2033,12 +1952,9 @@ subroutine print_stream_tokens(stream)
 	! Note that any final trailing whitespace gets lumped in with EOF_TOKEN.
 	! This is probably ok
 
-	! TODO: refactor this as a string converter and add a test. Could be useful
-	! for testing new stream types (e.g. stdin) or benchmarking performance of
-	! streaming vs loading everything in memory up front
 	sb = new_str_builder()
 	call sb%push('tokens = '//LINE_FEED//'<<<'//LINE_FEED)
-	lexer = new_lexer(stream)
+	lexer = new_lexer(str)
 	do
 		token = lexer%current_token
 		call sb%push("    " &
@@ -2053,7 +1969,7 @@ subroutine print_stream_tokens(stream)
 	call sb%push(">>>"//LINE_FEED)
 	write(*, "(a)") sb%trim()
 
-end subroutine print_stream_tokens
+end subroutine print_str_tokens
 
 function kind_name(kind)
 	! TODO: consider auto-generating
@@ -2078,8 +1994,8 @@ function kind_name(kind)
 			"STR_TOKEN        ", & ! 16
 			"OBJ_TYPE         ", & ! 17
 			"ARR_TYPE         ", & ! 18
-			"FILE_STREAM      ", & ! 19
-			"STR_STREAM       ", & ! 20
+			"(unused)         ", & ! 19
+			"(unused)         ", & ! 20
 			"NULL_TOKEN       ", & ! 21
 			"NULL_TYPE        ", & ! 22
 			"BOOL_TOKEN       ", & ! 23
