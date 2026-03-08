@@ -2,6 +2,8 @@
 module jsonf
 
 	use jsonf__utils
+	use iso_c_binding, only: c_double, c_long_long, c_int, c_char, &
+	    c_ptr, c_null_char, c_loc, c_associated, c_null_ptr
 	implicit none
 
 	private :: type_name, decode_ptr_key
@@ -242,6 +244,24 @@ module jsonf
 		BAD_TOKEN        = 2, &
 		EOF_TOKEN        = 1
 
+	interface
+		function c_strtod(nptr, endptr) bind(C, name="strtod") result(val)
+			import c_char, c_ptr, c_double
+			character(kind=c_char), intent(in) :: nptr(*)
+			type(c_ptr), intent(out) :: endptr
+			real(c_double) :: val
+		end function c_strtod
+
+		function c_strtoll_checked(nptr, endptr, base, overflow) bind(C, name="c_strtoll_checked") result(val)
+			import c_char, c_ptr, c_int, c_long_long
+			character(kind=c_char), intent(in) :: nptr(*)
+			type(c_ptr), intent(out) :: endptr
+			integer(c_int), value :: base
+			integer(c_int), intent(out) :: overflow
+			integer(c_long_long) :: val
+		end function c_strtoll_checked
+	end interface
+
 contains
 
 function get_jsonf_vers()
@@ -251,6 +271,44 @@ function get_jsonf_vers()
 		to_str(JSONF_MINOR) // "." // &
 		to_str(JSONF_PATCH)
 end function get_jsonf_vers
+
+logical function parse_f64(str, val)
+	character(len=*), intent(in) :: str
+	real(kind=8), intent(out) :: val
+	!********
+	character(kind=c_char), target :: c_str(len(str)+1)
+	type(c_ptr) :: endptr
+	character :: ch
+	integer :: i
+	! Copy chars, normalizing Fortran-style d/D exponents to e for strtod
+	do i = 1, len(str)
+		ch = str(i:i)
+		if (ch == 'd') ch = 'e'
+		if (ch == 'D') ch = 'E'
+		c_str(i) = ch
+	end do
+	c_str(len(str)+1) = c_null_char
+	val = c_strtod(c_str, endptr)
+	parse_f64 = c_associated(endptr) .and. &
+	            c_associated(endptr, c_loc(c_str(len(str)+1)))
+end function parse_f64
+
+logical function parse_i64(str, val)
+	character(len=*), intent(in) :: str
+	integer(kind=8), intent(out) :: val
+	!********
+	character(kind=c_char), target :: c_str(len(str)+1)
+	type(c_ptr) :: endptr
+	integer(c_int) :: overflow
+	integer :: i
+	do i = 1, len(str)
+		c_str(i) = str(i:i)
+	end do
+	c_str(len(str)+1) = c_null_char
+	val = c_strtoll_checked(c_str, endptr, 10_c_int, overflow)
+	parse_i64 = overflow == 0 .and. c_associated(endptr) .and. &
+	            c_associated(endptr, c_loc(c_str(len(str)+1)))
+end function parse_i64
 
 subroutine lexer_next_char(lexer)
 	class(lexer_t), intent(inout) :: lexer
@@ -319,7 +377,7 @@ function lex(lexer) result(token)
 	type(token_t) :: token
 	!********
 	character(len=:), allocatable :: text, text_strip, reason
-	integer :: io, l0, c0
+	integer :: l0, c0
 	integer(kind=8) :: i64
 	logical :: float_, is_valid
 	real(kind=8) :: f64
@@ -391,9 +449,8 @@ function lex(lexer) result(token)
 		end if
 
 		if (float_) then
-			read(text_strip, *, iostat = io) f64
-			if (DEBUG > 0) write(*,*) "lex: parsed f64 = "//to_str(f64)
-			if (io == EXIT_SUCCESS) then
+			if (parse_f64(text_strip, f64)) then
+				if (DEBUG > 0) write(*,*) "lex: parsed f64 = "//to_str(f64)
 				sca   = new_literal(F64_TYPE, f64 = f64)
 				token = new_token(F64_TOKEN, l0, c0, text, sca)
 			else
@@ -402,15 +459,13 @@ function lex(lexer) result(token)
 				return
 			end if
 		else  ! i64
-			read(text_strip, *, iostat = io) i64
-			if (DEBUG > 0) write(*,*) "lex: parsed i64 = "//to_str(i64)
-			if (io == EXIT_SUCCESS) then
+			if (parse_i64(text_strip, i64)) then
+				if (DEBUG > 0) write(*,*) "lex: parsed i64 = "//to_str(i64)
 				sca   = new_literal(I64_TYPE, i64 = i64)
 				token = new_token(I64_TOKEN, l0, c0, text, sca)
 			else
-				! i64 overflow — try f64 fallback
-				read(text_strip, *, iostat = io) f64
-				if (io == EXIT_SUCCESS) then
+				! i64 overflow -- try f64 fallback
+				if (parse_f64(text_strip, f64)) then
 					sca   = new_literal(F64_TYPE, f64 = f64)
 					token = new_token(F64_TOKEN, l0, c0, text, sca)
 				else
