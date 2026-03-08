@@ -194,6 +194,9 @@ module jsonf
 			warn_numbers             = .false., &
 			print_errors_immediately = .true.
 
+		type(json_val_t), allocatable :: val_stack(:)
+		integer :: val_stack_top = 0
+
 		contains
 			procedure :: &
 				lex, &
@@ -676,6 +679,8 @@ function new_lexer(stream, json) result(lexer)
 	lexer%line = 1
 	lexer%diagnostics = new_str_vec()
 	lexer%stream = stream
+	allocate(lexer%val_stack(64))
+	lexer%val_stack_top = 0
 
 	! Get the first char and token on construction instead of checking later if
 	! we have them. Column starts initially at 1
@@ -1266,11 +1271,8 @@ subroutine parse_arr(json, lexer, arr)
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: arr
 	!********
-	integer, parameter :: INIT_SIZE = 8
-	integer :: idx
-	integer(kind=8) :: i, n, n0 ! TODO: kind?
-	type(json_val_t) :: val
-	type(json_val_t), allocatable :: old_arr(:)
+	integer :: idx, base
+	integer(kind=8) :: i
 
 	if (DEBUG > 0) print *, "Starting parse_arr()"
 
@@ -1279,38 +1281,27 @@ subroutine parse_arr(json, lexer, arr)
 	if (.not. lexer%is_ok) return
 	arr%type = ARR_TYPE
 
-	! Initialize array storage
-	allocate(arr%arr(INIT_SIZE))
-	arr%narr = 0
-
+	base = lexer%val_stack_top
 	idx = 0
 	do
 		if (lexer%current_kind() == RBRACKET_TOKEN) exit
 		idx = idx + 1
-		!print *, "idx = ", idx
-
-		call parse_val(json, lexer, val)
-		!print *, "val = ", val%to_str()
-		!print *, "lexer%is_ok = ", lexer%is_ok
-		if (.not. lexer%is_ok) return
 
 		if (.not. json%lint) then
-			n0 = size(arr%arr)
-			if (idx > n0) then
-				! Resize array dynamically
-				n = n0 * 2
-				call move_alloc(arr%arr, old_arr)
-				allocate(arr%arr(n))
-				do i = 1, n0
-					call move_val(old_arr(i), arr%arr(i))
-				end do
-				deallocate(old_arr)
+			! Push a slot onto the val_stack before parsing so recursive
+			! parse_arr starts above this slot
+			lexer%val_stack_top = lexer%val_stack_top + 1
+			if (lexer%val_stack_top > size(lexer%val_stack)) then
+				call grow_val_stack(lexer)
 			end if
-
-			! Store the value. Could avoid temp `val` by resizing before parsing,
-			! arrays are simpler than objects
-			call move_val(val, arr%arr(idx))
+			call parse_val(json, lexer, lexer%val_stack(lexer%val_stack_top))
+		else
+			block
+				type(json_val_t) :: val
+				call parse_val(json, lexer, val)
+			end block
 		end if
+		if (.not. lexer%is_ok) return
 
 		select case (lexer%current_kind())
 		case (COMMA_TOKEN)
@@ -1323,8 +1314,14 @@ subroutine parse_arr(json, lexer, arr)
 		end select
 	end do
 	arr%narr = idx
-	!print *, "current  = ", kind_name(lexer%current_kind())
-	!print *, "previous = ", kind_name(lexer%previous_token%kind)
+
+	if (.not. json%lint .and. idx > 0) then
+		allocate(arr%arr(idx))
+		do i = 1, idx
+			call move_val(lexer%val_stack(base + i), arr%arr(i))
+		end do
+	end if
+	lexer%val_stack_top = base
 
 	if (lexer%previous_token%kind == COMMA_TOKEN) then
 		if (json%error_trailing_commas) then
@@ -1350,7 +1347,7 @@ subroutine parse_obj(json, lexer, obj)
 	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key, descr, context, summary
-	integer, parameter :: INIT_SIZE = 8
+	integer, parameter :: INIT_SIZE = 2
 	integer :: key_line, key_col, key_len
 	type(json_val_t) :: val
 
@@ -1866,6 +1863,20 @@ subroutine move_val(src, dst)
 	end select
 
 end subroutine move_val
+
+subroutine grow_val_stack(lexer)
+	type(lexer_t), intent(inout) :: lexer
+	!********
+	integer(kind=8) :: i, n0
+	type(json_val_t), allocatable :: old(:)
+	n0 = size(lexer%val_stack)
+	call move_alloc(lexer%val_stack, old)
+	allocate(lexer%val_stack(n0 * 2))
+	do i = 1, n0
+		call move_val(old(i), lexer%val_stack(i))
+	end do
+	deallocate(old)
+end subroutine grow_val_stack
 
 recursive subroutine copy_val(dst, src)
 	! TODO: try to avoid
