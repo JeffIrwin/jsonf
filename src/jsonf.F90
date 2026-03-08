@@ -7,6 +7,13 @@ module jsonf
 	private :: type_name, decode_ptr_key
 
 	! TODO:
+	! - stream_t is over-engineered. claude ended up reading whole files as strs
+	!   anyway for perf. might as well simplify it now. could keep the type
+	!   wrapper but get rid of FILE_STREAM at least
+	! - the val_stack is a nice perf optimization to avoid reallocation churn
+	!   while parsing arrays. can we make a similar optimization for objects?
+	!   hash map implementation is inlined anyway so it wouldn't hurt to make it
+	!   even more special-purpose
 	! - add a way to get an array of the keys of an obj?
 	!   * either that or some other way to iterate over an obj, like accessing
 	!     by int index. together with %len(), iteration could be performed
