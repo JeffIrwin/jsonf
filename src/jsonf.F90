@@ -7,13 +7,15 @@ module jsonf
 	private :: type_name, decode_ptr_key
 
 	! TODO:
+	! - add a way to get an array of the keys of an obj?
+	!   * either that or some other way to iterate over an obj, like accessing
+	!     by int index. together with %len(), iteration could be performed
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
 	!   other options, e.g. error_trailing_commas, require leading digit before
 	!   decimal point, etc.
 	!   * name strict, pedantic, -Wall or -Werror
 	!   * probably keep error_duplicate_keys orthogonal to this since standard
 	!     allows dupes
-	! - write details in readme
 	! - expose less
 	!   * move as many implementation details as possible into something like
 	!     private.F90
