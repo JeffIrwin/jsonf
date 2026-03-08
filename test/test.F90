@@ -426,6 +426,31 @@ subroutine test_in9(nfail, ntot)
 
 end subroutine test_in9
 
+subroutine test_in10(nfail, ntot)
+	! Regression test: nested array that grows val_stack past initial capacity (64)
+	!
+	! [[1, ..., 65]] -- inner array has 65 elements, forcing grow_val_stack
+	! during parse_val. The old code passed val_stack(k) directly to parse_val,
+	! so the reallocation invalidated the caller's reference (SIGSEGV).
+	integer, intent(inout) :: nfail, ntot
+	!********
+	character(len=:), allocatable :: filename
+	integer(kind=8) :: i64
+	type(json_t) :: json
+
+	filename = "data/in10.json"
+	write(*,*) "Unit testing file "//quote(filename)//" ..."
+
+	call json%read_file(filename)
+	TEST(json%len('') == 1, "test_in10 1: outer len", nfail, ntot)
+	TEST(json%len('/0') == 65, "test_in10 2: inner len", nfail, ntot)
+	i64 = json%get_i64('/0/0')
+	TEST(i64 == 1_8, "test_in10 3: first elem", nfail, ntot)
+	i64 = json%get_i64('/0/64')
+	TEST(i64 == 65_8, "test_in10 4: last elem", nfail, ntot)
+
+end subroutine test_in10
+
 logical function is_sorted_i32(v) result(sorted)
 	integer, intent(in) :: v(:)
 	integer :: n
@@ -1998,6 +2023,7 @@ program test
 	call test_in7(nfail, ntot)
 	call test_in8(nfail, ntot)
 	call test_in9(nfail, ntot)
+	call test_in10(nfail, ntot)
 	call test_errs(nfail, ntot)
 	call test_file_errs(nfail, ntot)
 	call test_get_api(nfail, ntot)

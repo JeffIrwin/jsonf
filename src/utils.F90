@@ -64,7 +64,7 @@ module jsonf__utils
 		! This is basically a dynamic char vector, but the type is a str and not
 		! an actual array of single chars
 		character(len = :), allocatable :: str
-		integer(kind = 8) :: len, cap
+		integer(kind = 8) :: len = 0, cap = 0
 		contains
 			procedure :: &
 				push => push_str_builder, &
@@ -75,14 +75,14 @@ module jsonf__utils
 
 	type i64_vec_t
 		integer(kind=8), allocatable :: vec(:)
-		integer(kind = 8) :: len, cap
+		integer(kind = 8) :: len = 0, cap = 0
 		contains
 			procedure :: push => push_i64
 	end type i64_vec_t
 
 	type str_vec_t
 		type(str_t), allocatable :: vec(:)
-		integer(kind = 8) :: len, cap
+		integer(kind = 8) :: len = 0, cap = 0
 		contains
 			procedure :: push => push_str
 	end type str_vec_t
@@ -278,9 +278,7 @@ function read_file(file, iostat) result(str)
 	integer, optional, intent(out) :: iostat
 	character(len = :), allocatable :: str
 	!********
-	character :: c
-	integer :: io, iu
-	type(str_builder_t) :: sb  ! string builder
+	integer :: io, iu, fsize
 
 	! Open as binary to simplify newline handling
 	open(file = file, newunit = iu, action = "read", access = "stream", iostat = io)
@@ -289,21 +287,16 @@ function read_file(file, iostat) result(str)
 		return
 	end if
 
-	! Read 1 character at a time until end
-	io = EXIT_SUCCESS
-	sb = new_str_builder()
-	do
-		read(iu, iostat = io) c
-		if (io == IOSTAT_END) exit
-		call sb%push(c)
-	end do
-	if (io == IOSTAT_END) io = EXIT_SUCCESS
+	! Bulk read: inquire file size, allocate, read in one shot
+	inquire(unit = iu, size = fsize)
+	allocate(character(len = fsize) :: str)
+	if (fsize > 0) then
+		read(iu, iostat = io) str
+		if (io == IOSTAT_END) io = EXIT_SUCCESS
+	else
+		io = EXIT_SUCCESS
+	end if
 	close(iu)
-	str = sb%trim()
-
-	!print *, "io = ", io
-	!print *, 'str = '
-	!print *, str
 
 	if (present(iostat)) iostat = io
 
@@ -915,7 +908,7 @@ logical function is_whitespace(c)
 
 	character, intent(in) :: c
 
-	is_whitespace = any(c == [TAB, LINE_FEED, VERT_TAB, CARRIAGE_RETURN, ' '])
+	is_whitespace = c == ' ' .or. c == LINE_FEED .or. c == TAB .or. c == CARRIAGE_RETURN .or. c == VERT_TAB
 
 end function is_whitespace
 

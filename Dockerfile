@@ -73,6 +73,9 @@ RUN ! $JSONF -s '.0' -l -Werror=numbers
 RUN $JSONF -s '0.0' -l -Werror=numbers
 RUN $JSONF -s '0.' -l -Wnumbers
 
+# Missing file (regression: uninitialized diagnostics vec caused SIGSEGV)
+RUN $JSONF nonexistent_file.json 2>&1 | grep "can't open file"
+
 # Do one more because I want green text at the end of the log
 RUN $JSONF -s '{"a": 1, "b": 2}'
 
