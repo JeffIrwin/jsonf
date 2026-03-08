@@ -10,6 +10,8 @@ module jsonf
 	! - add a way to get an array of the keys of an obj?
 	!   * either that or some other way to iterate over an obj, like accessing
 	!     by int index. together with %len(), iteration could be performed
+	! - can ansi colors be shown in github readme? it would be nice to show
+	!   error messages with color. are screenshots worth it otherwise?
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
 	!   other options, e.g. error_trailing_commas, require leading digit before
 	!   decimal point, etc.
@@ -178,16 +180,13 @@ module jsonf
 	end type token_t
 
 	type lexer_t
-		!character(len=:), allocatable :: src_file  ! already part of stream_t encapsed in lexer
 		integer             :: line, col
 		logical             :: is_ok = .true.  ! error state
 		type(str_vec_t)     :: diagnostics
-		type(str_vec_t)     :: lines
-		type(str_builder_t) :: line_str
 		type(stream_t)      :: stream
 
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
-		character     :: current_char , previous_char
+		character     :: current_char
 		type(token_t) :: current_token, previous_token
 
 		logical :: &
@@ -202,7 +201,6 @@ module jsonf
 				next_char    => lexer_next_char, &
 				next_token   => lexer_next_token, &
 				current_kind => lexer_current_kind, &
-				finish_line  => lexer_finish_line, &
 				push_err     => lexer_push_err
 	end type lexer_t
 
@@ -246,53 +244,42 @@ end function get_jsonf_vers
 
 subroutine lexer_next_char(lexer)
 	class(lexer_t), intent(inout) :: lexer
-	!********
-	lexer%previous_char = lexer%current_char
-	lexer%current_char =  lexer%stream%get()
+	! Inline STR_STREAM access for performance; file streams fall back to get()
+	if (lexer%stream%type == STR_STREAM) then
+		if (lexer%stream%pos > len(lexer%stream%str)) then
+			lexer%stream%is_eof = .true.
+			lexer%current_char = NULL_CHAR
+		else
+			lexer%current_char = lexer%stream%str(lexer%stream%pos:lexer%stream%pos)
+			lexer%stream%pos = lexer%stream%pos + 1
+		end if
+	else
+		lexer%current_char = lexer%stream%get()
+	end if
 	if (lexer%current_char == LINE_FEED) then
-		! The line feed is column 0, and the first char after the line feed is column 1
-		call lexer%lines%push(lexer%line_str%trim())  ! save completed line
 		lexer%line = lexer%line + 1
-		lexer%col = 0
-		lexer%line_str = new_str_builder()
+		lexer%col  = 0
 	else
 		lexer%col = lexer%col + 1
-		call lexer%line_str%push(lexer%current_char)
 	end if
-
-	!print *, "char = ", quote(lexer%current_char)
-	!print *, "line = ", lexer%line
-	!print *, "col  = ", lexer%col
-	!print *, ""
 end subroutine lexer_next_char
 
-subroutine lexer_finish_line(lexer)
-	class(lexer_t), intent(inout) :: lexer
-	! Read the rest of the line, for error messages
-	!
-	! TODO: save current stream position and restore it later, in case we want
-	! to keep trying to parse?  Or can we just stop parsing after first error?
-	do
-		lexer%previous_char = lexer%current_char
-		lexer%current_char =  lexer%stream%get()
-		if (lexer%stream%is_eof) exit
-		if (lexer%current_char == LINE_FEED) exit
-
-		call lexer%line_str%push(lexer%current_char)
-	end do
-end subroutine lexer_finish_line
 
 subroutine lexer_next_token(lexer)
-	! Advance to the next non-whitespace token.  Comment skipping could also be
-	! added here
+	! Advance to the next token. Whitespace is skipped inside lex() itself.
+	! Use move_alloc to transfer previous_token's allocatable strings without copying.
 	class(lexer_t), intent(inout) :: lexer
 	!********
-	lexer%previous_token = lexer%current_token
-	lexer%current_token  = lexer%lex()
-	do while (lexer%current_token%kind == WHITESPACE_TOKEN)
-		lexer%current_token = lexer%lex()
-		if (lexer%current_token%kind == EOF_TOKEN) exit
-	end do
+	lexer%previous_token%kind     = lexer%current_token%kind
+	lexer%previous_token%line     = lexer%current_token%line
+	lexer%previous_token%col      = lexer%current_token%col
+	lexer%previous_token%sca%type = lexer%current_token%sca%type
+	lexer%previous_token%sca%bool = lexer%current_token%sca%bool
+	lexer%previous_token%sca%i64  = lexer%current_token%sca%i64
+	lexer%previous_token%sca%f64  = lexer%current_token%sca%f64
+	call move_alloc(lexer%current_token%sca%str, lexer%previous_token%sca%str)
+	call move_alloc(lexer%current_token%text,    lexer%previous_token%text)
+	lexer%current_token = lexer%lex()
 end subroutine lexer_next_token
 
 integer function lexer_current_kind(lexer)
@@ -329,6 +316,11 @@ function lex(lexer) result(token)
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
 
+	! Skip whitespace inline — avoid creating WHITESPACE_TOKEN altogether
+	do while (is_whitespace(lexer%current_char))
+		call lexer%next_char()
+	end do
+
 	l0 = lexer%line
 	c0 = lexer%col
 	if (lexer%stream%is_eof) then
@@ -337,17 +329,6 @@ function lex(lexer) result(token)
 	end if
 
 	if (DEBUG > 2) write(*,*) "lex: current char = "//quote(lexer%current_char)
-
-	if (is_whitespace(lexer%current_char)) then
-		sb = new_str_builder()
-		do while (is_whitespace(lexer%current_char))
-			call sb%push(lexer%current_char)
-			call lexer%next_char()
-		end do
-		text = sb%trim()
-		token = new_token(WHITESPACE_TOKEN, l0, c0, text)
-		return
-	end if
 
 	! Note, beware the overlap between is_float_under() and is_letter(), thus
 	! the intertwined order dependence here.  Neither 'null', 'true', or 'false'
@@ -376,7 +357,11 @@ function lex(lexer) result(token)
 		end do
 
 		text = sb%trim()
-		text_strip = rm_char(text, "_")
+		if (index(text, "_") > 0) then
+			text_strip = rm_char(text, "_")
+		else
+			text_strip = text
+		end if
 		!print *, "text = ", text
 
 		!print *, "lexer%error_numbers = ", lexer%error_numbers
@@ -690,25 +675,18 @@ function new_lexer(stream, json) result(lexer)
 
 	lexer%line = 1
 	lexer%diagnostics = new_str_vec()
-	lexer%lines = new_str_vec()
 	lexer%stream = stream
 
 	! Get the first char and token on construction instead of checking later if
 	! we have them. Column starts initially at 1
-	lexer%line_str = new_str_builder()
 	lexer%current_char = lexer%stream%get()
 	lexer%col = 1
 	if (lexer%current_char == LINE_FEED) then
-		call lexer%lines%push('')  ! push empty line for the newline
 		lexer%line = lexer%line + 1
-	else
-		call lexer%line_str%push(lexer%current_char)
+		lexer%col  = 0
 	end if
 
 	lexer%current_token = lexer%lex()
-
-	! Skip leading whitespace
-	if (lexer%current_kind() == WHITESPACE_TOKEN) call lexer%next_token()
 
 end function new_lexer
 
@@ -717,10 +695,11 @@ subroutine read_file_json(json, filename)
 	character(len=*), intent(in) :: filename
 	!********
 	type(stream_t) :: stream
+	character(len=:), allocatable :: src
 	integer :: io
 
-	! Stream chars one at a time
-	stream = new_file_stream(filename, io)
+	! Bulk-read entire file into memory, then parse as a string stream
+	src = read_file(filename, io)
 	if (io /= EXIT_SUCCESS) then
 		call json%diagnostics%push(ERROR_STR//"can't open file "//quote(filename))
 		json%is_ok = .false.
@@ -729,6 +708,8 @@ subroutine read_file_json(json, filename)
 		end if
 		return
 	end if
+	stream = new_str_stream(src)
+	stream%src_file = filename
 	call json%parse(stream)
 
 end subroutine read_file_json
@@ -1285,7 +1266,7 @@ subroutine parse_arr(json, lexer, arr)
 	type(lexer_t), intent(inout) :: lexer
 	type(json_val_t), intent(out) :: arr
 	!********
-	integer, parameter :: INIT_SIZE = 2
+	integer, parameter :: INIT_SIZE = 8
 	integer :: idx
 	integer(kind=8) :: i, n, n0 ! TODO: kind?
 	type(json_val_t) :: val
@@ -1369,7 +1350,7 @@ subroutine parse_obj(json, lexer, obj)
 	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key, descr, context, summary
-	integer, parameter :: INIT_SIZE = 2
+	integer, parameter :: INIT_SIZE = 8
 	integer :: key_line, key_col, key_len
 	type(json_val_t) :: val
 
@@ -1617,6 +1598,40 @@ subroutine err_trailing_comma(lexer, context_name)
 
 end subroutine err_trailing_comma
 
+function get_source_line(stream, line_num) result(line)
+	! Extract line line_num (1-indexed) from the in-memory source string
+	type(stream_t), intent(in) :: stream
+	integer, intent(in) :: line_num
+	character(len=:), allocatable :: line
+	!********
+	integer :: i, current_line, line_start, n
+
+	if (.not. allocated(stream%str)) then
+		line = ""
+		return
+	end if
+
+	n = len(stream%str)
+	current_line = 1
+	line_start   = 1
+	do i = 1, n
+		if (stream%str(i:i) == LINE_FEED) then
+			if (current_line == line_num) then
+				line = stream%str(line_start: i - 1)
+				return
+			end if
+			current_line = current_line + 1
+			line_start   = i + 1
+		end if
+	end do
+	! Last line (no trailing newline)
+	if (current_line == line_num) then
+		line = stream%str(line_start: n)
+	else
+		line = ""
+	end if
+end function get_source_line
+
 function underline(lexer, start, length, line_)
 	type(lexer_t) :: lexer
 	integer, intent(in) :: start, length
@@ -1654,13 +1669,8 @@ function underline(lexer, start, length, line_)
 		line_idx = lexer%current_token%line
 	end if
 
-	! Look up the stored line if available; otherwise fall back to current line_str
-	if (line_idx <= lexer%lines%len) then
-		text = tabs_to_spaces(lexer%lines%vec(line_idx)%str)
-	else
-		call lexer%finish_line()
-		text = tabs_to_spaces(lexer%line_str%trim())
-	end if
+	! Extract the requested source line on demand from the in-memory source string
+	text = tabs_to_spaces(get_source_line(lexer%stream, line_idx))
 
 	! Pad spaces the same length as the line number string
 	spaces = repeat(' ', len(line_num) + 2)
