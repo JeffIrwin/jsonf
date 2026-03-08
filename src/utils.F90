@@ -64,7 +64,7 @@ module jsonf__utils
 		! This is basically a dynamic char vector, but the type is a str and not
 		! an actual array of single chars
 		character(len = :), allocatable :: str
-		integer(kind = 8) :: len, cap
+		integer(kind = 8) :: len = 0, cap = 0
 		contains
 			procedure :: &
 				push => push_str_builder, &
@@ -75,14 +75,14 @@ module jsonf__utils
 
 	type i64_vec_t
 		integer(kind=8), allocatable :: vec(:)
-		integer(kind = 8) :: len, cap
+		integer(kind = 8) :: len = 0, cap = 0
 		contains
 			procedure :: push => push_i64
 	end type i64_vec_t
 
 	type str_vec_t
 		type(str_t), allocatable :: vec(:)
-		integer(kind = 8) :: len, cap
+		integer(kind = 8) :: len = 0, cap = 0
 		contains
 			procedure :: push => push_str
 	end type str_vec_t
