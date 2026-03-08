@@ -342,6 +342,10 @@ subroutine lexer_next_token(lexer)
 	! Use move_alloc to transfer previous_token's allocatable strings without copying.
 	class(lexer_t), intent(inout) :: lexer
 	!********
+
+	! TODO: can we make the whole previous_token/current_token members
+	! allocatable to move all at once instead of move/copy individual
+	! sub-sub-members?
 	lexer%previous_token%kind     = lexer%current_token%kind
 	lexer%previous_token%line     = lexer%current_token%line
 	lexer%previous_token%col      = lexer%current_token%col
@@ -388,7 +392,7 @@ function lex(lexer) result(token)
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
 
-	! Skip whitespace inline — avoid creating WHITESPACE_TOKEN altogether
+	! Skip whitespace inline -- avoid creating WHITESPACE_TOKEN altogether
 	do while (is_whitespace(lexer%current_char))
 		call lexer%next_char()
 	end do
@@ -429,6 +433,10 @@ function lex(lexer) result(token)
 		end do
 
 		text = sb%trim()
+		! TODO: instead of calling index() here, just check for underscores
+		! above in while loop. Could also micro-optimize dD -> eE conversion (if
+		! allowed by config) above instead of making an extra copy in
+		! parse_f64()
 		if (index(text, "_") > 0) then
 			text_strip = rm_char(text, "_")
 		else
@@ -745,6 +753,9 @@ function new_lexer(stream, json) result(lexer)
 	lexer%line = 1
 	lexer%diagnostics = new_str_vec()
 	lexer%stream = stream
+
+	! Note that the unit test for data/in10.json is designed to just exceed this
+	! initial stack size. If it's ever updated, the test should be too
 	allocate(lexer%val_stack(64))
 	lexer%val_stack_top = 0
 
@@ -1271,7 +1282,7 @@ recursive subroutine resolve_copy(json, val, ptr, i0, outval, found, silent)
 end subroutine resolve_copy
 
 recursive subroutine path_meta(val, ptr, i0, found, val_type, narr, nkeys)
-	! Like resolve_copy but does NOT copy the value — only returns metadata.
+	! Like resolve_copy but does NOT copy the value -- only returns metadata.
 	! Used by has(), is_null(), and len() to avoid deep-copying large subtrees.
 	type(json_val_t), intent(in) :: val
 	character(len=*), intent(in) :: ptr
