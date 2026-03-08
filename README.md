@@ -34,7 +34,7 @@ The `jsonf` binary is installed to the default fpm path, usually `~/.local/bin`.
 ## CLI Usage
 
 ```
-jsonf 0.4.0
+jsonf 0.5.0
  Usage:
      jsonf -h | --help
      jsonf FILE.json [(-p|--pointer) POINTER]

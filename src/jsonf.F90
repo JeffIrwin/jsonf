@@ -74,7 +74,7 @@ module jsonf
 	! - test diagnostics reporting line/column numbers
 
 	integer, parameter :: &
-		JSONF_MAJOR = 0, &  ! Note: update version in fpm.toml too
+		JSONF_MAJOR = 0, &  ! Note: update version in fpm.toml, cmake, readme too
 		JSONF_MINOR = 5, &
 		JSONF_PATCH = 0
 
