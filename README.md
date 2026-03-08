@@ -21,6 +21,8 @@ There's no good reason -- for an alternative I recommend [json-fortran](https://
 - Duplicate key control: keep last (default), keep first, or disallow
 - Library API with typed scalar, vector, and matrix getters
 
+![Parse error with Rust-style diagnostic](img/error.png)
+
 ## Install
 
 Use [fpm](https://fpm.fortran-lang.org/), the Fortran package manager:
@@ -95,9 +97,9 @@ jsonf -s '{"baz": [0, 10, 20, 30]}' -p '/baz/3'
 
 ```bash
 jsonf -s '{"foo": 1, "bar": 2, "baz": 3}' -p '/bark'
-# Error: key "bark" not found
-# Did you mean "bar"?
 ```
+
+![Spell-check error with suggestion](img/spell-check.png)
 
 ### Compact output
 
@@ -140,6 +142,12 @@ jsonf --lint -Werror=commas data.json
 # Warn about non-standard number formats like .5 or 1.d2
 jsonf --lint -Wnumbers data.json
 ```
+
+```bash
+jsonf -s '[1, 2, 3,]' -Wcommas --lint
+```
+
+![Trailing comma warning](img/warning.png)
 
 ## Library API
 
