@@ -9,6 +9,9 @@ module jsonf
 	private :: type_name, decode_ptr_key
 
 	! TODO:
+	! - bug with %len() method for root object? doesn't seem to work in
+	!   benchmark-object example. there is a unit test on a non-root '/d' object
+	!   which seems to work
 	! - add a way to get an array of the keys of an obj?
 	!   * either that or some other way to iterate over an obj, like accessing
 	!     by int index. together with %len(), iteration could be performed

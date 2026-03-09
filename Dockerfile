@@ -22,13 +22,16 @@ WORKDIR /workdir/jsonf
 # The .dockerignore stops ADD from copying build output, e.g. .o files
 ADD . .
 
+# TODO: auto-gen objects.json benchmark example data. Maybe replace canada.json
+# with something else auto-generated
+
 #RUN cmake -S . -B build && cmake --build build #--verbose
 RUN fpm test
 RUN fpm test --profile debug
 RUN fpm test --profile release
-RUN fpm run --example
-RUN fpm run --example --profile debug
-RUN fpm run --example --profile release
+RUN fpm run --example basic
+RUN fpm run --example basic --profile debug
+RUN fpm run --example basic --profile release
 ARG JSONF="./build/bin/jsonf"
 
 RUN fpm install --prefix build --profile debug
