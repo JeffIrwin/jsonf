@@ -15,8 +15,8 @@ program example
 	call system_clock(finish)
 	write(*,'(A30,1X,F7.4,1X,A)') 'jsonf : ', (finish-start)/real(count_rate,real64), ' seconds'
 
-	len_ = j%len("/")
-	print *, "len_('/') = ", len_
+	len_ = j%len("")
+	print *, "len_('') = ", len_
 
 	len_ = j%len("/user_0000")
 	print *, "len_('/user_0000') = ", len_
