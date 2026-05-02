@@ -1,6 +1,6 @@
 
 cmake_minimum_required(VERSION 3.12)
-project(jsonf VERSION 0.4.0 LANGUAGES Fortran)
+project(jsonf VERSION 0.5.0 LANGUAGES Fortran)
 
 # Library
 add_library(jsonf_lib

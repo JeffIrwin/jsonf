@@ -9,18 +9,9 @@ module jsonf
 	private :: type_name, decode_ptr_key
 
 	! TODO:
-	! - stream_t is over-engineered. claude ended up reading whole files as strs
-	!   anyway for perf. might as well simplify it now. could keep the type
-	!   wrapper but get rid of FILE_STREAM at least
-	! - the val_stack is a nice perf optimization to avoid reallocation churn
-	!   while parsing arrays. can we make a similar optimization for objects?
-	!   hash map implementation is inlined anyway so it wouldn't hurt to make it
-	!   even more special-purpose
 	! - add a way to get an array of the keys of an obj?
 	!   * either that or some other way to iterate over an obj, like accessing
 	!     by int index. together with %len(), iteration could be performed
-	! - can ansi colors be shown in github readme? it would be nice to show
-	!   error messages with color. are screenshots worth it otherwise?
 	! - add a `strict` option (json_t member and cmd arg) which just turns on
 	!   other options, e.g. error_trailing_commas, require leading digit before
 	!   decimal point, etc.
@@ -39,13 +30,6 @@ module jsonf
 	!   * ribbit?
 	! - spellcheck for bad cmd args
 	!   * bad keys done
-	! - add other stream types
-	!   * stdin
-	!   * network? probably not
-	!   * is streaming worthwhile or does it actually hurt performance? there's
-	!     actually a "lines" str vec of all lines to help with diagnostics, so
-	!     we're saving the whole file in memory now anyway. maybe there's a
-	!     simpler approach
 	! - ci/cd
 	!   * linux done, in docker including on ci/cd
 	!   * test on windows, linux (macos?)
@@ -74,21 +58,11 @@ module jsonf
 	! - test diagnostics reporting line/column numbers
 
 	integer, parameter :: &
-		JSONF_MAJOR = 0, &  ! Note: update version in fpm.toml too
+		JSONF_MAJOR = 0, &  ! Note: update version in fpm.toml, cmake, readme too
 		JSONF_MINOR = 5, &
 		JSONF_PATCH = 0
 
 	integer, parameter :: DEBUG = 0
-
-	type stream_t
-		integer :: type
-		integer :: unit
-		integer(kind=8) :: pos
-		character(len=:), allocatable :: str, src_file
-		logical :: is_eof = .false.
-		contains
-			procedure :: get => get_stream_char
-	end type stream_t
 
 	type sca_t
 		! Scalar value type -- primitive bool, int, float, str, or null, but
@@ -196,11 +170,13 @@ module jsonf
 		integer             :: line, col
 		logical             :: is_ok = .true.  ! error state
 		type(str_vec_t)     :: diagnostics
-		type(stream_t)      :: stream
+		integer(kind=8)                :: pos
+		character(len=:), allocatable  :: str, src_file
+		logical                        :: is_eof = .false.
 
 		! Could add more lookaheads if needed, i.e. next_token and peek2_token
 		character     :: current_char
-		type(token_t) :: current_token, previous_token
+		type(token_t), allocatable :: current_token, previous_token
 
 		logical :: &
 			error_numbers            = .false., &
@@ -209,6 +185,12 @@ module jsonf
 
 		type(json_val_t), allocatable :: val_stack(:)
 		integer :: val_stack_top = 0
+
+		type(str_t), allocatable :: key_stack(:)
+		integer :: key_stack_top = 0
+		integer, allocatable :: key_line_stack(:)
+		integer, allocatable :: key_col_stack(:)
+		integer, allocatable :: key_len_stack(:)
 
 		contains
 			procedure :: &
@@ -227,8 +209,6 @@ module jsonf
 		BOOL_TOKEN       = 23, &
 		NULL_TYPE        = 22, &
 		NULL_TOKEN       = 21, &
-		STR_STREAM       = 20, &
-		FILE_STREAM      = 19, &
 		ARR_TYPE         = 18, &
 		OBJ_TYPE         = 17, &
 		STR_TOKEN        = 16, &
@@ -316,17 +296,12 @@ end function parse_i64
 
 subroutine lexer_next_char(lexer)
 	class(lexer_t), intent(inout) :: lexer
-	! Inline STR_STREAM access for performance; file streams fall back to get()
-	if (lexer%stream%type == STR_STREAM) then
-		if (lexer%stream%pos > len(lexer%stream%str)) then
-			lexer%stream%is_eof = .true.
-			lexer%current_char = NULL_CHAR
-		else
-			lexer%current_char = lexer%stream%str(lexer%stream%pos:lexer%stream%pos)
-			lexer%stream%pos = lexer%stream%pos + 1
-		end if
+	if (lexer%pos > len(lexer%str)) then
+		lexer%is_eof = .true.
+		lexer%current_char = NULL_CHAR
 	else
-		lexer%current_char = lexer%stream%get()
+		lexer%current_char = lexer%str(lexer%pos:lexer%pos)
+		lexer%pos = lexer%pos + 1
 	end if
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
@@ -339,18 +314,10 @@ end subroutine lexer_next_char
 
 subroutine lexer_next_token(lexer)
 	! Advance to the next token. Whitespace is skipped inside lex() itself.
-	! Use move_alloc to transfer previous_token's allocatable strings without copying.
+	! move_alloc the whole token struct since both are allocatable.
 	class(lexer_t), intent(inout) :: lexer
 	!********
-	lexer%previous_token%kind     = lexer%current_token%kind
-	lexer%previous_token%line     = lexer%current_token%line
-	lexer%previous_token%col      = lexer%current_token%col
-	lexer%previous_token%sca%type = lexer%current_token%sca%type
-	lexer%previous_token%sca%bool = lexer%current_token%sca%bool
-	lexer%previous_token%sca%i64  = lexer%current_token%sca%i64
-	lexer%previous_token%sca%f64  = lexer%current_token%sca%f64
-	call move_alloc(lexer%current_token%sca%str, lexer%previous_token%sca%str)
-	call move_alloc(lexer%current_token%text,    lexer%previous_token%text)
+	call move_alloc(lexer%current_token, lexer%previous_token)
 	lexer%current_token = lexer%lex()
 end subroutine lexer_next_token
 
@@ -383,19 +350,19 @@ function lex(lexer) result(token)
 	character(len=:), allocatable :: text, text_strip, reason
 	integer :: l0, c0
 	integer(kind=8) :: i64
-	logical :: float_, is_valid
+	logical :: float_, has_under, is_valid
 	real(kind=8) :: f64
 	type(str_builder_t) :: sb
 	type(sca_t) :: sca
 
-	! Skip whitespace inline — avoid creating WHITESPACE_TOKEN altogether
+	! Skip whitespace inline -- avoid creating WHITESPACE_TOKEN altogether
 	do while (is_whitespace(lexer%current_char))
 		call lexer%next_char()
 	end do
 
 	l0 = lexer%line
 	c0 = lexer%col
-	if (lexer%stream%is_eof) then
+	if (lexer%is_eof) then
 		token = new_token(EOF_TOKEN, lexer%line, lexer%col, NULL_CHAR)
 		return
 	end if
@@ -417,6 +384,7 @@ function lex(lexer) result(token)
 		! You'll never have to parse arithmetic like `1+2` in json, unlike
 		! syntran
 		float_ = .false.
+		has_under = .false.
 		sb = new_str_builder()
 		if (is_sign(lexer%current_char)) then
 			call sb%push(lexer%current_char)
@@ -424,12 +392,13 @@ function lex(lexer) result(token)
 		end if
 		do while (is_float_under(lexer%current_char))
 			float_ = float_ .or. .not. is_digit_under(lexer%current_char)
+			has_under = has_under .or. lexer%current_char == '_'
 			call sb%push(lexer%current_char)
 			call lexer%next_char()
 		end do
 
 		text = sb%trim()
-		if (index(text, "_") > 0) then
+		if (has_under) then
 			text_strip = rm_char(text, "_")
 		else
 			text_strip = text
@@ -445,7 +414,7 @@ function lex(lexer) result(token)
 					! TODO: should warnings be pushed as a diagnostic? It would be nice to underline them in context like errors
 					write(*, "(a)") WARN_STR//"bad number "//quote(text)//" ("//reason//")"
 				else if (lexer%error_numbers) then
-					call err_number(lexer, c0, text, reason)
+					call err_number(lexer, l0, c0, text, reason)
 					token = new_token(BAD_TOKEN, l0, c0, text)
 					return
 				end if
@@ -458,7 +427,7 @@ function lex(lexer) result(token)
 				sca   = new_literal(F64_TYPE, f64 = f64)
 				token = new_token(F64_TOKEN, l0, c0, text, sca)
 			else
-				call err_float(lexer, c0, text)
+				call err_float(lexer, l0, c0, text)
 				token = new_token(BAD_TOKEN, l0, c0, text)
 				return
 			end if
@@ -473,7 +442,7 @@ function lex(lexer) result(token)
 					sca   = new_literal(F64_TYPE, f64 = f64)
 					token = new_token(F64_TOKEN, l0, c0, text, sca)
 				else
-					call err_integer(lexer, c0, text)
+					call err_integer(lexer, l0, c0, text)
 					token = new_token(BAD_TOKEN, l0, c0, text)
 					return
 				end if
@@ -501,7 +470,7 @@ function lex(lexer) result(token)
 			end if
 			call sb%push(lexer%current_char)
 
-			if (lexer%current_char == '"' .or. lexer%stream%is_eof) then
+			if (lexer%current_char == '"' .or. lexer%is_eof) then
 				exit
 			end if
 
@@ -509,7 +478,7 @@ function lex(lexer) result(token)
 		end do
 		text = sb%trim()
 
-		if (lexer%stream%is_eof) then
+		if (lexer%is_eof) then
 			! Unterminated string
 			token = new_token(BAD_TOKEN, l0, c0, text)
 			call err_unterminated_str(lexer, l0, c0, text)
@@ -730,10 +699,11 @@ function new_token(kind, line, col, text, sca) result(token)
 
 end function new_token
 
-function new_lexer(stream, json) result(lexer)
-	type(stream_t) :: stream
-	type(lexer_t) :: lexer
+function new_lexer(str, json, src_file) result(lexer)
+	character(len=*), intent(in) :: str
 	type(json_t), optional :: json
+	character(len=*), intent(in), optional :: src_file
+	type(lexer_t) :: lexer
 	!********
 
 	if (present(json)) then
@@ -744,13 +714,34 @@ function new_lexer(stream, json) result(lexer)
 
 	lexer%line = 1
 	lexer%diagnostics = new_str_vec()
-	lexer%stream = stream
+	lexer%str = str
+	lexer%pos = 1
+	if (present(src_file)) then
+		lexer%src_file = src_file
+	else
+		lexer%src_file = "<string>"
+	end if
+
+	! Note that the unit test for data/in10.json is designed to just exceed this
+	! initial stack size. If it's ever updated, the test should be too
 	allocate(lexer%val_stack(64))
 	lexer%val_stack_top = 0
 
+	allocate(lexer%key_stack(64))
+	allocate(lexer%key_line_stack(64))
+	allocate(lexer%key_col_stack(64))
+	allocate(lexer%key_len_stack(64))
+	lexer%key_stack_top = 0
+
 	! Get the first char and token on construction instead of checking later if
 	! we have them. Column starts initially at 1
-	lexer%current_char = lexer%stream%get()
+	if (lexer%pos > len(lexer%str)) then
+		lexer%is_eof = .true.
+		lexer%current_char = NULL_CHAR
+	else
+		lexer%current_char = lexer%str(lexer%pos:lexer%pos)
+		lexer%pos = lexer%pos + 1
+	end if
 	lexer%col = 1
 	if (lexer%current_char == LINE_FEED) then
 		lexer%line = lexer%line + 1
@@ -758,6 +749,7 @@ function new_lexer(stream, json) result(lexer)
 	end if
 
 	lexer%current_token = lexer%lex()
+	allocate(lexer%previous_token)
 
 end function new_lexer
 
@@ -765,11 +757,9 @@ subroutine read_file_json(json, filename)
 	class(json_t) :: json
 	character(len=*), intent(in) :: filename
 	!********
-	type(stream_t) :: stream
 	character(len=:), allocatable :: src
 	integer :: io
 
-	! Bulk-read entire file into memory, then parse as a string stream
 	src = read_file(filename, io)
 	if (io /= EXIT_SUCCESS) then
 		call json%diagnostics%push(ERROR_STR//"can't open file "//quote(filename))
@@ -779,59 +769,20 @@ subroutine read_file_json(json, filename)
 		end if
 		return
 	end if
-	stream = new_str_stream(src)
-	stream%src_file = filename
-	call json%parse(stream)
+	call json%parse(src, filename)
 
 end subroutine read_file_json
 
 subroutine read_str_json(json, str)
 	class(json_t), intent(inout) :: json
 	character(len=*), intent(in) :: str
-	!********
-	type(stream_t) :: stream
-
-	! We have the whole str, but treat it as a stream for consistency with file
-	! streaming
-	stream = new_str_stream(str)
-	call json%parse(stream)
-
+	call json%parse(str)
 end subroutine read_str_json
 
-character function get_stream_char(stream) result(c)
-	class(stream_t) :: stream
-	!********
-	integer :: io
-	select case (stream%type)
-	case (FILE_STREAM)
-		!print *, "reading stream unit "//to_str(stream%unit)
-		read(stream%unit, iostat = io) c
-		if (io == IOSTAT_END) then
-			stream%is_eof = .true.
-			c = NULL_CHAR
-			return
-		end if
-		!print *, "c = ", quote(c)
-
-	case (STR_STREAM)
-		!print *, "getting str stream pos "//to_str(stream%pos)
-		if (stream%pos > len(stream%str)) then
-			stream%is_eof = .true.
-			c = NULL_CHAR
-			return
-		end if
-		c = stream%str(stream%pos:stream%pos)
-		!print *, "c = ", quote(c)
-		stream%pos = stream%pos + 1
-
-	case default
-		call panic("stream type not implemented")
-	end select
-end function get_stream_char
-
-subroutine parse_json(json, stream)
+subroutine parse_json(json, str, src_file)
 	class(json_t), intent(inout) :: json
-	type(stream_t) :: stream
+	character(len=*), intent(in) :: str
+	character(len=*), intent(in), optional :: src_file
 	!********
 	type(lexer_t) :: lexer
 	integer :: i
@@ -840,7 +791,11 @@ subroutine parse_json(json, stream)
 	json%is_ok = .true.
 	json%diagnostics = new_str_vec()
 
-	lexer = new_lexer(stream, json)
+	if (present(src_file)) then
+		lexer = new_lexer(str, json, src_file)
+	else
+		lexer = new_lexer(str, json)
+	end if
 	call parse_val(json, lexer, json%root)
 
 	! Append lexer diagnostics into json (json may already have e.g. duplicate key errors)
@@ -1271,7 +1226,7 @@ recursive subroutine resolve_copy(json, val, ptr, i0, outval, found, silent)
 end subroutine resolve_copy
 
 recursive subroutine path_meta(val, ptr, i0, found, val_type, narr, nkeys)
-	! Like resolve_copy but does NOT copy the value — only returns metadata.
+	! Like resolve_copy but does NOT copy the value -- only returns metadata.
 	! Used by has(), is_null(), and len() to avoid deep-copying large subtrees.
 	type(json_val_t), intent(in) :: val
 	character(len=*), intent(in) :: ptr
@@ -1417,9 +1372,7 @@ subroutine parse_obj(json, lexer, obj)
 	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key, descr, context, summary
-	integer, parameter :: INIT_SIZE = 2
-	integer :: key_line, key_col, key_len
-	type(json_val_t) :: val
+	integer :: key_base, val_base, nkeys, map_size, i
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
 
@@ -1427,41 +1380,51 @@ subroutine parse_obj(json, lexer, obj)
 	call lexer%match(LBRACE_TOKEN)
 	if (.not. lexer%is_ok) return
 	obj%type = OBJ_TYPE
-
-	! Initialize hash map storage
-	allocate(obj%keys(INIT_SIZE))
-	allocate(obj%vals(INIT_SIZE))
-	allocate(obj%idx (INIT_SIZE))
 	obj%nkeys = 0
+
+	key_base = lexer%key_stack_top
+	val_base = lexer%val_stack_top
 
 	do
 		if (lexer%current_kind() == RBRACE_TOKEN) exit
 
 		call lexer%match(STR_TOKEN)
 		if (.not. lexer%is_ok) return
-		key      = lexer%previous_token%sca%str
-		key_line = lexer%previous_token%line
-		key_col  = lexer%previous_token%col
-		key_len  = len(lexer%previous_token%text)
-		!print *, "key = ", key
+
+		if (.not. json%lint) then
+			! Push key and position info onto key stack
+			lexer%key_stack_top = lexer%key_stack_top + 1
+			if (lexer%key_stack_top > size(lexer%key_stack)) then
+				call grow_key_stack(lexer)
+			end if
+			lexer%key_stack(lexer%key_stack_top)%str = lexer%previous_token%sca%str
+			lexer%key_line_stack(lexer%key_stack_top) = lexer%previous_token%line
+			lexer%key_col_stack(lexer%key_stack_top)  = lexer%previous_token%col
+			lexer%key_len_stack(lexer%key_stack_top)  = len(lexer%previous_token%text)
+		end if
 
 		call lexer%match(COLON_TOKEN)
 		if (.not. lexer%is_ok) return
-		call parse_val(json, lexer, val)
-		if (.not. lexer%is_ok) return
-		!print *, "val = ", val%to_str()
 
 		if (.not. json%lint) then
-			! Store the key-value pair in the object
-			call set_map(json, obj, key, val)
-			if (.not. json%is_ok) then
-				descr   = ERROR_STR // 'duplicate key ' // quote(key)
-				context = underline(lexer, key_col, key_len, key_line)
-				summary = fg_bright_red // ' duplicate key' // color_reset
-				call lexer%push_err(descr, context, summary)
-				return
+			! Push a slot onto the val_stack before parsing so recursive
+			! parse_obj/parse_arr starts above this slot
+			lexer%val_stack_top = lexer%val_stack_top + 1
+			if (lexer%val_stack_top > size(lexer%val_stack)) then
+				call grow_val_stack(lexer)
 			end if
+			block
+				type(json_val_t) :: val
+				call parse_val(json, lexer, val)
+				call move_val(val, lexer%val_stack(lexer%val_stack_top))
+			end block
+		else
+			block
+				type(json_val_t) :: val
+				call parse_val(json, lexer, val)
+			end block
 		end if
+		if (.not. lexer%is_ok) return
 
 		select case (lexer%current_kind())
 		case (COMMA_TOKEN)
@@ -1473,8 +1436,6 @@ subroutine parse_obj(json, lexer, obj)
 			return
 		end select
 	end do
-	!print *, "current  = ", kind_name(lexer%current_kind())
-	!print *, "previous = ", kind_name(lexer%previous_token%kind)
 
 	if (lexer%previous_token%kind == COMMA_TOKEN) then
 		if (json%error_trailing_commas) then
@@ -1488,12 +1449,30 @@ subroutine parse_obj(json, lexer, obj)
 	call lexer%match(RBRACE_TOKEN)
 	if (.not. lexer%is_ok) return
 
-	! We might be able to deallocate obj%idx(:) here if no duplicate keys were
-	! found. However, memory savings aren't that much -- every key and val takes
-	! up more memory than an idx. Also it would be fine with current read-once
-	! architecture, but if we expose an API to modify JSON after reading, new
-	! duplicate keys might get inserted even if the object originally had unique
-	! keys
+	if (.not. json%lint) then
+		! Allocate hash map at exact size (load factor <= 0.5) and bulk-insert
+		nkeys    = lexer%key_stack_top - key_base
+		map_size = max(2, nkeys * 2)
+		allocate(obj%keys(map_size))
+		allocate(obj%vals(map_size))
+		allocate(obj%idx (map_size))
+		do i = 1, nkeys
+			key = lexer%key_stack(key_base + i)%str
+			call set_map_core(json, obj, key, lexer%val_stack(val_base + i))
+			if (.not. json%is_ok) then
+				descr   = ERROR_STR // 'duplicate key ' // quote(key)
+				context = underline(lexer, &
+					lexer%key_col_stack(key_base + i), &
+					lexer%key_len_stack(key_base + i), &
+					lexer%key_line_stack(key_base + i))
+				summary = fg_bright_red // ' duplicate key' // color_reset
+				call lexer%push_err(descr, context, summary)
+				return
+			end if
+		end do
+		lexer%key_stack_top = key_base
+		lexer%val_stack_top = val_base
+	end if
 
 	if (DEBUG > 0) then
 		write(*,*) "Finished parse_obj(), nkeys = "//to_str(obj%nkeys)
@@ -1520,9 +1499,9 @@ subroutine err_arr_delim(lexer)
 
 end subroutine err_arr_delim
 
-subroutine err_number(lexer, start, number_text, reason)
+subroutine err_number(lexer, line, start, number_text, reason)
 	type(lexer_t), intent(inout) :: lexer
-	integer, intent(in) :: start
+	integer, intent(in) :: line, start
 	character(len=*), intent(in) :: number_text, reason
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1532,16 +1511,16 @@ subroutine err_number(lexer, start, number_text, reason)
 		'bad number format: ' // number_text // ' (' // reason // ')'
 
 	length  = len(number_text)
-	context = underline(lexer, start, length)
+	context = underline(lexer, start, length, line)
 	summary = fg_bright_red//" bad number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
 
 end subroutine err_number
 
-subroutine err_float(lexer, start, number_text)
+subroutine err_float(lexer, line, start, number_text)
 	type(lexer_t), intent(inout) :: lexer
-	integer, intent(in) :: start
+	integer, intent(in) :: line, start
 	character(len=*), intent(in) :: number_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1551,16 +1530,16 @@ subroutine err_float(lexer, start, number_text)
 		'bad floating-point number format: ' // number_text
 
 	length  = len(number_text)
-	context = underline(lexer, start, length)
+	context = underline(lexer, start, length, line)
 	summary = fg_bright_red//" bad float number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
 
 end subroutine err_float
 
-subroutine err_integer(lexer, start, number_text)
+subroutine err_integer(lexer, line, start, number_text)
 	type(lexer_t), intent(inout) :: lexer
-	integer, intent(in) :: start
+	integer, intent(in) :: line, start
 	character(len=*), intent(in) :: number_text
 	!********
 	character(len=:), allocatable :: descr, summary, context
@@ -1570,7 +1549,7 @@ subroutine err_integer(lexer, start, number_text)
 		'bad integer number format: ' // number_text
 
 	length  = len(number_text)
-	context = underline(lexer, start, length)
+	context = underline(lexer, start, length, line)
 	summary = fg_bright_red//" bad integer number"//color_reset
 
 	call lexer%push_err(descr, context, summary)
@@ -1665,26 +1644,26 @@ subroutine err_trailing_comma(lexer, context_name)
 
 end subroutine err_trailing_comma
 
-function get_source_line(stream, line_num) result(line)
+function get_source_line(src, line_num) result(line)
 	! Extract line line_num (1-indexed) from the in-memory source string
-	type(stream_t), intent(in) :: stream
+	character(len=*), intent(in) :: src
 	integer, intent(in) :: line_num
 	character(len=:), allocatable :: line
 	!********
 	integer :: i, current_line, line_start, n
 
-	if (.not. allocated(stream%str)) then
+	if (len(src) == 0) then
 		line = ""
 		return
 	end if
 
-	n = len(stream%str)
+	n = len(src)
 	current_line = 1
 	line_start   = 1
 	do i = 1, n
-		if (stream%str(i:i) == LINE_FEED) then
+		if (src(i:i) == LINE_FEED) then
 			if (current_line == line_num) then
-				line = stream%str(line_start: i - 1)
+				line = src(line_start: i - 1)
 				return
 			end if
 			current_line = current_line + 1
@@ -1693,7 +1672,7 @@ function get_source_line(stream, line_num) result(line)
 	end do
 	! Last line (no trailing newline)
 	if (current_line == line_num) then
-		line = stream%str(line_start: n)
+		line = src(line_start: n)
 	else
 		line = ""
 	end if
@@ -1737,12 +1716,12 @@ function underline(lexer, start, length, line_)
 	end if
 
 	! Extract the requested source line on demand from the in-memory source string
-	text = tabs_to_spaces(get_source_line(lexer%stream, line_idx))
+	text = tabs_to_spaces(get_source_line(lexer%str, line_idx))
 
 	! Pad spaces the same length as the line number string
 	spaces = repeat(' ', len(line_num) + 2)
 
-	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%stream%src_file &
+	underline = LINE_FEED//fg1//spaces(2:)//"--> "//rst//lexer%src_file &
 		//":"//line_num//":"//to_str(start)//LINE_FEED &
 		//fg1//     spaces//"| "//LINE_FEED &
 		//fg1//" "//line_num//" | "//rst//text//LINE_FEED &
@@ -1948,6 +1927,27 @@ subroutine grow_val_stack(lexer)
 	deallocate(old)
 end subroutine grow_val_stack
 
+subroutine grow_key_stack(lexer)
+	type(lexer_t), intent(inout) :: lexer
+	!********
+	integer :: n0
+	type(str_t), allocatable :: old_keys(:)
+	integer, allocatable :: old_line(:), old_col(:), old_len(:)
+	n0 = size(lexer%key_stack)
+	call move_alloc(lexer%key_stack, old_keys)
+	call move_alloc(lexer%key_line_stack, old_line)
+	call move_alloc(lexer%key_col_stack, old_col)
+	call move_alloc(lexer%key_len_stack, old_len)
+	allocate(lexer%key_stack(n0 * 2))
+	allocate(lexer%key_line_stack(n0 * 2))
+	allocate(lexer%key_col_stack(n0 * 2))
+	allocate(lexer%key_len_stack(n0 * 2))
+	lexer%key_stack(1:n0)      = old_keys
+	lexer%key_line_stack(1:n0) = old_line
+	lexer%key_col_stack(1:n0)  = old_col
+	lexer%key_len_stack(1:n0)  = old_len
+end subroutine grow_key_stack
+
 recursive subroutine copy_val(dst, src)
 	! TODO: try to avoid
 	class(json_val_t), intent(in) :: src
@@ -1985,50 +1985,18 @@ recursive subroutine copy_val(dst, src)
 
 end subroutine copy_val
 
-function new_file_stream(filename, io_status) result(stream)
-	character(len=*), intent(in) :: filename
-	integer, intent(out), optional :: io_status
-	type(stream_t) :: stream
-	!********
-	integer :: io
-	stream%type = FILE_STREAM
-	stream%src_file = filename
-	open(file = filename, newunit = stream%unit, action = "read", access = "stream", iostat = io)
-	!print *, "opened stream unit "//to_str(stream%unit)
-	if (present(io_status)) then
-		io_status = io
-	else if (io /= EXIT_SUCCESS) then
-		call panic("can't open file "//quote(filename))
-	end if
-end function new_file_stream
-
-function new_str_stream(str) result(stream)
-	character(len=*), intent(in) :: str
-	type(stream_t) :: stream
-	!********
-	stream%type = STR_STREAM
-	stream%str = str
-	stream%pos = 1
-	stream%src_file = "<STR_STREAM>"
-end function new_str_stream
-
 subroutine print_file_tokens(filename)
 	character(len=*), intent(in) :: filename
 	!********
-	type(stream_t) :: stream
+	character(len=:), allocatable :: src
 	integer :: io
-	stream = new_file_stream(filename, io)
+	src = read_file(filename, io)
 	if (io /= EXIT_SUCCESS) call panic("can't open file "//quote(filename))
-	call print_stream_tokens(stream)
+	call print_str_tokens(src)
 end subroutine print_file_tokens
 
 subroutine print_str_tokens(str)
 	character(len=*), intent(in) :: str
-	call print_stream_tokens(new_str_stream(str))
-end subroutine print_str_tokens
-
-subroutine print_stream_tokens(stream)
-	type(stream_t) :: stream
 	!********
 	type(lexer_t) :: lexer
 	type(str_builder_t) :: sb
@@ -2037,12 +2005,9 @@ subroutine print_stream_tokens(stream)
 	! Note that any final trailing whitespace gets lumped in with EOF_TOKEN.
 	! This is probably ok
 
-	! TODO: refactor this as a string converter and add a test. Could be useful
-	! for testing new stream types (e.g. stdin) or benchmarking performance of
-	! streaming vs loading everything in memory up front
 	sb = new_str_builder()
 	call sb%push('tokens = '//LINE_FEED//'<<<'//LINE_FEED)
-	lexer = new_lexer(stream)
+	lexer = new_lexer(str)
 	do
 		token = lexer%current_token
 		call sb%push("    " &
@@ -2057,7 +2022,7 @@ subroutine print_stream_tokens(stream)
 	call sb%push(">>>"//LINE_FEED)
 	write(*, "(a)") sb%trim()
 
-end subroutine print_stream_tokens
+end subroutine print_str_tokens
 
 function kind_name(kind)
 	! TODO: consider auto-generating
@@ -2082,8 +2047,8 @@ function kind_name(kind)
 			"STR_TOKEN        ", & ! 16
 			"OBJ_TYPE         ", & ! 17
 			"ARR_TYPE         ", & ! 18
-			"FILE_STREAM      ", & ! 19
-			"STR_STREAM       ", & ! 20
+			"(unused)         ", & ! 19
+			"(unused)         ", & ! 20
 			"NULL_TOKEN       ", & ! 21
 			"NULL_TYPE        ", & ! 22
 			"BOOL_TOKEN       ", & ! 23

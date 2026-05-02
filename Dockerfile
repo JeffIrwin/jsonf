@@ -22,10 +22,16 @@ WORKDIR /workdir/jsonf
 # The .dockerignore stops ADD from copying build output, e.g. .o files
 ADD . .
 
+# TODO: auto-gen objects.json benchmark example data. Maybe replace canada.json
+# with something else auto-generated
+
 #RUN cmake -S . -B build && cmake --build build #--verbose
 RUN fpm test
 RUN fpm test --profile debug
 RUN fpm test --profile release
+RUN fpm run --example basic
+RUN fpm run --example basic --profile debug
+RUN fpm run --example basic --profile release
 ARG JSONF="./build/bin/jsonf"
 
 RUN fpm install --prefix build --profile debug
@@ -74,7 +80,12 @@ RUN $JSONF -s '0.0' -l -Werror=numbers
 RUN $JSONF -s '0.' -l -Wnumbers
 
 # Missing file (regression: uninitialized diagnostics vec caused SIGSEGV)
+RUN ! $JSONF nonexistent_file.json
 RUN $JSONF nonexistent_file.json 2>&1 | grep "can't open file"
+
+# Empty file should give a clean "unexpected token" error, not a crash
+RUN ! $JSONF /dev/null
+RUN $JSONF /dev/null 2>&1 | grep "unexpected token"
 
 # Do one more because I want green text at the end of the log
 RUN $JSONF -s '{"a": 1, "b": 2}'

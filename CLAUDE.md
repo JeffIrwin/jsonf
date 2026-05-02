@@ -34,8 +34,7 @@ This is a Fortran JSON parser and formatter implemented as a library + CLI using
 
 ### Key types (in `src/jsonf.F90`)
 
-- `stream_t` — character-by-character source (file or string)
-- `lexer_t` — tokenizer; tracks line/col for error reporting; holds `stream_t`
+- `lexer_t` — tokenizer; tracks line/col for error reporting; holds the source string inline
 - `token_t` — a single token with kind, line, col, text, and scalar value
 - `sca_t` — scalar value (bool, i64, f64, str, or null)
 - `json_val_t` — a JSON value node (scalar, array, or object); objects use an open-addressing hashmap with `djb2_hash` and linear probing; insertion order is preserved via an `idx(:)` array
@@ -43,7 +42,7 @@ This is a Fortran JSON parser and formatter implemented as a library + CLI using
 
 ### Parsing pipeline
 
-`json%read_file()` / `json%read_str()` → `parse_json()` → `new_lexer()` + `parse_val()` (recursive descent: `parse_obj()`, `parse_arr()`) → stores result in `json%root`
+`json%read_file()` / `json%read_str()` → `parse_json(str [, src_file])` → `new_lexer()` + `parse_val()` (recursive descent: `parse_obj()`, `parse_arr()`) → stores result in `json%root`
 
 Error messages are Rust-style with source location and `^`-underlines. Errors are accumulated in `lexer%diagnostics` (a `str_vec_t`) and propagated to `json%diagnostics` after parsing. The `json%print_errors_immediately` flag controls whether they are also printed inline.
 

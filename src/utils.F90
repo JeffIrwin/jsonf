@@ -294,6 +294,8 @@ function read_file(file, iostat) result(str)
 		read(iu, iostat = io) str
 		if (io == IOSTAT_END) io = EXIT_SUCCESS
 	else
+		! str is already allocated with len=0 (from the allocate above).
+		! The parser will handle the empty-content case naturally.
 		io = EXIT_SUCCESS
 	end if
 	close(iu)
@@ -908,7 +910,8 @@ logical function is_whitespace(c)
 
 	character, intent(in) :: c
 
-	is_whitespace = c == ' ' .or. c == LINE_FEED .or. c == TAB .or. c == CARRIAGE_RETURN .or. c == VERT_TAB
+	is_whitespace = c == ' ' .or. c == LINE_FEED .or. c == TAB .or. &
+		c == CARRIAGE_RETURN .or. c == VERT_TAB
 
 end function is_whitespace
 
