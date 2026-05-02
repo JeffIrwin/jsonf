@@ -1372,7 +1372,7 @@ subroutine parse_obj(json, lexer, obj)
 	type(json_val_t), intent(out) :: obj
 	!********
 	character(len=:), allocatable :: key, descr, context, summary
-	integer :: key_base, val_base, count, map_size, i
+	integer :: key_base, val_base, nkeys, map_size, i
 
 	if (DEBUG > 0) print *, "Starting parse_obj()"
 
@@ -1391,15 +1391,17 @@ subroutine parse_obj(json, lexer, obj)
 		call lexer%match(STR_TOKEN)
 		if (.not. lexer%is_ok) return
 
-		! Push key and position info onto key stack
-		lexer%key_stack_top = lexer%key_stack_top + 1
-		if (lexer%key_stack_top > size(lexer%key_stack)) then
-			call grow_key_stack(lexer)
+		if (.not. json%lint) then
+			! Push key and position info onto key stack
+			lexer%key_stack_top = lexer%key_stack_top + 1
+			if (lexer%key_stack_top > size(lexer%key_stack)) then
+				call grow_key_stack(lexer)
+			end if
+			lexer%key_stack(lexer%key_stack_top)%str = lexer%previous_token%sca%str
+			lexer%key_line_stack(lexer%key_stack_top) = lexer%previous_token%line
+			lexer%key_col_stack(lexer%key_stack_top)  = lexer%previous_token%col
+			lexer%key_len_stack(lexer%key_stack_top)  = len(lexer%previous_token%text)
 		end if
-		lexer%key_stack(lexer%key_stack_top)%str = lexer%previous_token%sca%str
-		lexer%key_line_stack(lexer%key_stack_top) = lexer%previous_token%line
-		lexer%key_col_stack(lexer%key_stack_top)  = lexer%previous_token%col
-		lexer%key_len_stack(lexer%key_stack_top)  = len(lexer%previous_token%text)
 
 		call lexer%match(COLON_TOKEN)
 		if (.not. lexer%is_ok) return
@@ -1449,12 +1451,12 @@ subroutine parse_obj(json, lexer, obj)
 
 	if (.not. json%lint) then
 		! Allocate hash map at exact size (load factor <= 0.5) and bulk-insert
-		count    = lexer%key_stack_top - key_base
-		map_size = max(2, count * 2)
+		nkeys    = lexer%key_stack_top - key_base
+		map_size = max(2, nkeys * 2)
 		allocate(obj%keys(map_size))
 		allocate(obj%vals(map_size))
 		allocate(obj%idx (map_size))
-		do i = 1, count
+		do i = 1, nkeys
 			key = lexer%key_stack(key_base + i)%str
 			call set_map_core(json, obj, key, lexer%val_stack(val_base + i))
 			if (.not. json%is_ok) then
