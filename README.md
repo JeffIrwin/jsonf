@@ -23,11 +23,13 @@ There's no good reason -- for an alternative I recommend [json-fortran](https://
 
 ![Parse error with Rust-style diagnostic](img/error.png)
 
-## Install
+## Install from source
 
-Use [fpm](https://fpm.fortran-lang.org/), the Fortran package manager:
+Clone the source and install with [fpm](https://fpm.fortran-lang.org/), the Fortran package manager:
 
 ```bash
+git clone https://github.com/JeffIrwin/jsonf
+cd jsonf
 fpm install
 ```
 
